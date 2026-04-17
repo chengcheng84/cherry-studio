@@ -129,7 +129,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
   const isFullscreen = useFullscreen()
   const { settedTheme, toggleTheme } = useTheme()
   const { hideMiniAppPopup, miniAppsCache } = useMiniAppPopup()
-  const { allApps } = useMiniApps()
+  const { allApps, setCurrentMiniAppId, setMiniAppShow } = useMiniApps()
   // const { useSystemTitleBar } = useSettings()
   const [useSystemTitleBar] = usePreference('app.use_system_title_bar')
   const { t } = useTranslation()
@@ -198,6 +198,20 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, location.pathname])
+
+  useEffect(() => {
+    const segments = location.pathname.split('/')
+    const currentMiniAppRouteId = segments[1] === 'app' && segments[2] === 'miniapp' ? segments[3] : ''
+
+    if (currentMiniAppRouteId) {
+      setCurrentMiniAppId(currentMiniAppRouteId)
+      setMiniAppShow(true)
+      return
+    }
+
+    setCurrentMiniAppId('')
+    setMiniAppShow(false)
+  }, [location.pathname, setCurrentMiniAppId, setMiniAppShow])
 
   useEffect(() => {
     removeSpecialTabs()

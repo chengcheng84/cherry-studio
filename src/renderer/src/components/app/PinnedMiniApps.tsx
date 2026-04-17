@@ -1,12 +1,11 @@
 import { Tooltip } from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
+import MiniAppContextMenu from '@renderer/components/MiniApp/MiniAppContextMenu'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { useNavbarPosition } from '@renderer/hooks/useNavbar'
 import type { MiniApp } from '@shared/data/types/miniapp'
-import type { MenuProps } from 'antd'
-import { Dropdown } from 'antd'
 import type { FC } from 'react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,18 +17,14 @@ import MiniAppIcon from '../Icons/MiniAppIcon'
 /** Tabs of opened miniapps in sidebar */
 export const SidebarOpenedMiniAppTabs: FC = () => {
   const { miniAppShow, openedKeepAliveMiniApps, currentMiniAppId } = useMiniApps()
-  const { openMiniAppKeepAlive, hideMiniAppPopup, closeMiniApp, closeAllMiniApps } = useMiniAppPopup()
+  const { openMiniAppKeepAlive, closeMiniApp, closeAllMiniApps } = useMiniAppPopup()
   const [showOpenedMiniAppsInSidebar] = usePreference('feature.miniapp.show_opened_in_sidebar')
   const { theme } = useTheme()
   const { t } = useTranslation()
   const { isLeftNavbar } = useNavbarPosition()
 
   const handleOnClick = (app: MiniApp) => {
-    if (miniAppShow && currentMiniAppId === app.appId) {
-      hideMiniAppPopup()
-    } else {
-      openMiniAppKeepAlive(app)
-    }
+    openMiniAppKeepAlive(app)
   }
 
   // animation for miniapp switch indicator
@@ -68,7 +63,7 @@ export const SidebarOpenedMiniAppTabs: FC = () => {
       <TabsWrapper>
         <Menus>
           {openedKeepAliveMiniApps.map((app) => {
-            const menuItems: MenuProps['items'] = [
+            const menuItems = [
               {
                 key: 'closeApp',
                 label: t('miniapp.sidebar.close.title'),
@@ -87,18 +82,11 @@ export const SidebarOpenedMiniAppTabs: FC = () => {
             const isActive = miniAppShow && currentMiniAppId === app.appId
 
             return (
-              <Dropdown
-                key={app.appId}
-                menu={{ items: menuItems }}
-                trigger={['contextMenu']}
-                overlayStyle={{ zIndex: 10000 }}>
-                {/* FIXME: Antd Dropdown is not compatible with HeroUI Tooltip */}
-                {/* <Tooltip content={app.name} placement="right" delay={800}> */}
+              <MiniAppContextMenu key={app.appId} items={menuItems}>
                 <Icon theme={theme} onClick={() => handleOnClick(app)} className={`${isActive ? 'opened-active' : ''}`}>
                   <MiniAppIcon size={20} app={app} style={{ borderRadius: 6 }} sidebar />
                 </Icon>
-                {/* </Tooltip> */}
-              </Dropdown>
+              </MiniAppContextMenu>
             )
           })}
         </Menus>
@@ -117,7 +105,7 @@ export const SidebarPinnedApps: FC = () => {
   return (
     <DraggableList list={pinned} onUpdate={updatePinnedMiniApps} listStyle={{ marginBottom: 5 }}>
       {(app) => {
-        const menuItems: MenuProps['items'] = [
+        const menuItems = [
           {
             key: 'togglePin',
             label: isTopNavbar ? t('miniapp.remove_from_launchpad') : t('miniapp.remove_from_sidebar'),
@@ -129,14 +117,14 @@ export const SidebarPinnedApps: FC = () => {
         const isActive = miniAppShow && currentMiniAppId === app.appId
         return (
           <Tooltip key={app.appId} content={app.name} placement="right" delay={800}>
-            <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']} overlayStyle={{ zIndex: 10000 }}>
+            <MiniAppContextMenu items={menuItems}>
               <Icon
                 theme={theme}
                 onClick={() => openMiniAppKeepAlive(app)}
                 className={`${isActive ? 'active' : ''} ${openedKeepAliveMiniApps.some((item) => item.appId === app.appId) ? 'opened-miniapp' : ''}`}>
                 <MiniAppIcon size={20} app={app} style={{ borderRadius: 6 }} sidebar />
               </Icon>
-            </Dropdown>
+            </MiniAppContextMenu>
           </Tooltip>
         )
       }}

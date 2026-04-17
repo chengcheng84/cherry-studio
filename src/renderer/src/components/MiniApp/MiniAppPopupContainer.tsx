@@ -112,7 +112,7 @@ const GoogleLoginTip = ({
 
   // Navigate to the Google miniapp
   const openGoogleMiniApp = () => {
-    openMiniAppById('google', true)
+    openMiniAppById('google')
     // Dismiss the tip
     setVisible(false)
   }

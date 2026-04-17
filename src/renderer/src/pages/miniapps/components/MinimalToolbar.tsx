@@ -1,65 +1,78 @@
-import {
-  ArrowLeftOutlined,
-  ArrowRightOutlined,
-  CodeOutlined,
-  ExportOutlined,
-  LinkOutlined,
-  MinusOutlined,
-  PushpinOutlined,
-  ReloadOutlined
-} from '@ant-design/icons'
 import { Tooltip } from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
 import { isDev } from '@renderer/config/constant'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
+import { tabsService } from '@renderer/services/TabsService'
+import { cn } from '@renderer/utils'
 import type { MiniApp } from '@shared/data/types/miniapp'
-import { useNavigate } from '@tanstack/react-router'
+import { ArrowLeft, ArrowRight, Code2, ExternalLink, Link2, Minimize2, Pin, RotateCw } from 'lucide-react'
 import type { WebviewTag } from 'electron'
-import type { FC } from 'react'
+import type { FC, ReactNode, RefObject } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import styled from 'styled-components'
 
 const logger = loggerService.withContext('MinimalToolbar')
 
-// Constants for timing delays
-const WEBVIEW_CHECK_INITIAL_MS = 100 // Initial check interval
-const WEBVIEW_CHECK_MAX_MS = 1000 // Maximum check interval (1 second)
-const WEBVIEW_CHECK_MULTIPLIER = 2 // Exponential backoff multiplier
-const WEBVIEW_CHECK_MAX_ATTEMPTS = 30 // Stop after ~30 seconds total
+const WEBVIEW_CHECK_INITIAL_MS = 100
+const WEBVIEW_CHECK_MAX_MS = 1000
+const WEBVIEW_CHECK_MULTIPLIER = 2
+const WEBVIEW_CHECK_MAX_ATTEMPTS = 30
 const NAVIGATION_UPDATE_DELAY_MS = 50
 const NAVIGATION_COMPLETE_DELAY_MS = 100
 
 interface Props {
   app: MiniApp
-  webviewRef: React.RefObject<WebviewTag | null>
+  webviewRef: RefObject<WebviewTag | null>
   currentUrl: string | null
   onReload: () => void
   onOpenDevTools: () => void
 }
 
+interface ToolbarIconButtonProps {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  active?: boolean
+  children: ReactNode
+}
+
+const ToolbarIconButton = ({ label, onClick, disabled, active, children }: ToolbarIconButtonProps) => (
+  <button
+    type="button"
+    className={cn(
+      'flex size-8 items-center justify-center rounded-full transition',
+      disabled
+        ? 'cursor-default text-[var(--color-text-3)] opacity-50'
+        : active
+          ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/14'
+          : 'text-[var(--color-text-2)] hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]'
+    )}
+    onClick={disabled ? undefined : onClick}
+    aria-label={label}
+    aria-disabled={disabled}
+    aria-pressed={active}>
+    {children}
+  </button>
+)
+
 const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOpenDevTools }) => {
   const { t } = useTranslation()
   const { pinned, updatePinnedMiniApps, allApps } = useMiniApps()
   const [openLinkExternal, setOpenLinkExternal] = usePreference('feature.miniapp.open_link_external')
-  const navigate = useNavigate()
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const canPinned = allApps.some((item) => item.appId === app.appId)
   const isPinned = pinned.some((item) => item.appId === app.appId)
   const canOpenExternalLink = app.url.startsWith('http://') || app.url.startsWith('https://')
-
-  // Ref to track navigation update timeout
   const navigationUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Update navigation state
   const updateNavigationState = useCallback(() => {
     if (webviewRef.current) {
       try {
         setCanGoBack(webviewRef.current.canGoBack())
         setCanGoForward(webviewRef.current.canGoForward())
-      } catch (error) {
+      } catch (_error) {
         logger.debug('WebView not ready for navigation state update', { appId: app.appId })
         setCanGoBack(false)
         setCanGoForward(false)
@@ -70,12 +83,12 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
     }
   }, [app.appId, webviewRef])
 
-  // Schedule navigation state update with debouncing
   const scheduleNavigationUpdate = useCallback(
     (delay: number) => {
       if (navigationUpdateTimeoutRef.current) {
         clearTimeout(navigationUpdateTimeoutRef.current)
       }
+
       navigationUpdateTimeoutRef.current = setTimeout(() => {
         updateNavigationState()
         navigationUpdateTimeoutRef.current = null
@@ -84,7 +97,6 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
     [updateNavigationState]
   )
 
-  // Cleanup navigation timeout on unmount
   useEffect(() => {
     return () => {
       if (navigationUpdateTimeoutRef.current) {
@@ -93,7 +105,6 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
     }
   }, [])
 
-  // Monitor webviewRef changes and update navigation state
   useEffect(() => {
     let checkTimeout: NodeJS.Timeout | null = null
     let navigationListener: (() => void) | null = null
@@ -103,10 +114,8 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
 
     const attachListeners = () => {
       if (webviewRef.current && !listenersAttached) {
-        // Update state immediately
         updateNavigationState()
 
-        // Add navigation event listeners
         const handleNavigation = () => {
           scheduleNavigationUpdate(NAVIGATION_UPDATE_DELAY_MS)
         }
@@ -131,16 +140,15 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
         logger.debug('Navigation listeners attached', { appId: app.appId, attempts: attemptCount })
         return true
       }
+
       return false
     }
 
     const scheduleCheck = () => {
       checkTimeout = setTimeout(() => {
-        // Use requestAnimationFrame to avoid blocking the main thread
         requestAnimationFrame(() => {
           attemptCount++
           if (!attachListeners()) {
-            // Stop checking after max attempts to prevent infinite loops
             if (attemptCount >= WEBVIEW_CHECK_MAX_ATTEMPTS) {
               logger.warn('WebView attachment timeout', {
                 appId: app.appId,
@@ -150,10 +158,8 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
               return
             }
 
-            // Exponential backoff: double the interval up to the maximum
             currentInterval = Math.min(currentInterval * WEBVIEW_CHECK_MULTIPLIER, WEBVIEW_CHECK_MAX_MS)
 
-            // Log only on first few attempts or when interval changes significantly
             if (attemptCount <= 3 || attemptCount % 10 === 0) {
               logger.debug('WebView not ready, scheduling next check', {
                 appId: app.appId,
@@ -168,52 +174,54 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
       }, currentInterval)
     }
 
-    // Check for webview attachment
     if (!webviewRef.current) {
       scheduleCheck()
     } else {
       attachListeners()
     }
 
-    // Cleanup
     return () => {
-      if (checkTimeout) clearTimeout(checkTimeout)
-      if (navigationListener) navigationListener()
+      if (checkTimeout) {
+        clearTimeout(checkTimeout)
+      }
+      if (navigationListener) {
+        navigationListener()
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.appId, updateNavigationState, scheduleNavigationUpdate]) // webviewRef excluded as it's a ref object
+  }, [app.appId, scheduleNavigationUpdate, updateNavigationState, webviewRef])
 
   const handleGoBack = useCallback(() => {
     if (webviewRef.current) {
       try {
         if (webviewRef.current.canGoBack()) {
           webviewRef.current.goBack()
-          // Delay update to ensure navigation completes
           scheduleNavigationUpdate(NAVIGATION_COMPLETE_DELAY_MS)
         }
-      } catch (error) {
+      } catch (_error) {
         logger.debug('WebView not ready for navigation', { appId: app.appId, action: 'goBack' })
       }
     }
-  }, [app.appId, webviewRef, scheduleNavigationUpdate])
+  }, [app.appId, scheduleNavigationUpdate, webviewRef])
 
   const handleGoForward = useCallback(() => {
     if (webviewRef.current) {
       try {
         if (webviewRef.current.canGoForward()) {
           webviewRef.current.goForward()
-          // Delay update to ensure navigation completes
           scheduleNavigationUpdate(NAVIGATION_COMPLETE_DELAY_MS)
         }
-      } catch (error) {
+      } catch (_error) {
         logger.debug('WebView not ready for navigation', { appId: app.appId, action: 'goForward' })
       }
     }
-  }, [app.appId, webviewRef, scheduleNavigationUpdate])
+  }, [app.appId, scheduleNavigationUpdate, webviewRef])
 
   const handleMinimize = useCallback(() => {
-    void navigate({ to: '/app/miniapp' })
-  }, [navigate])
+    const closed = tabsService.closeTab(`miniapp:${app.appId}`)
+    if (!closed) {
+      logger.warn('Failed to close miniapp tab from toolbar', { appId: app.appId })
+    }
+  }, [app.appId])
 
   const handleTogglePin = useCallback(() => {
     const newPinned = isPinned ? pinned.filter((item) => item.appId !== app.appId) : [...pinned, app]
@@ -222,159 +230,82 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
 
   const handleToggleOpenExternal = useCallback(() => {
     void setOpenLinkExternal(!openLinkExternal)
-  }, [setOpenLinkExternal, openLinkExternal])
+  }, [openLinkExternal, setOpenLinkExternal])
 
   const handleOpenLink = useCallback(() => {
     const urlToOpen = currentUrl || app.url
     void window.api.openWebsite(urlToOpen)
-  }, [currentUrl, app.url])
+  }, [app.url, currentUrl])
 
   return (
-    <ToolbarContainer>
-      <LeftSection>
-        <ButtonGroup>
-          <Tooltip content={t('miniapp.popup.goBack')} placement="bottom">
-            <ToolbarButton
-              onClick={handleGoBack}
-              $disabled={!canGoBack}
-              aria-label={t('miniapp.popup.goBack')}
-              aria-disabled={!canGoBack}>
-              <ArrowLeftOutlined />
-            </ToolbarButton>
+    <div className="flex h-[35px] shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-background)] px-3">
+      <div className="flex items-center gap-1">
+        <Tooltip content={t('miniapp.popup.goBack')} placement="bottom">
+          <ToolbarIconButton label={t('miniapp.popup.goBack')} onClick={handleGoBack} disabled={!canGoBack}>
+            <ArrowLeft className="size-4" />
+          </ToolbarIconButton>
+        </Tooltip>
+        <Tooltip content={t('miniapp.popup.goForward')} placement="bottom">
+          <ToolbarIconButton label={t('miniapp.popup.goForward')} onClick={handleGoForward} disabled={!canGoForward}>
+            <ArrowRight className="size-4" />
+          </ToolbarIconButton>
+        </Tooltip>
+        <Tooltip content={t('miniapp.popup.refresh')} placement="bottom">
+          <ToolbarIconButton label={t('miniapp.popup.refresh')} onClick={onReload}>
+            <RotateCw className="size-4" />
+          </ToolbarIconButton>
+        </Tooltip>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {canOpenExternalLink && (
+          <Tooltip content={t('miniapp.popup.openExternal')} placement="bottom">
+            <ToolbarIconButton label={t('miniapp.popup.openExternal')} onClick={handleOpenLink}>
+              <ExternalLink className="size-4" />
+            </ToolbarIconButton>
           </Tooltip>
+        )}
 
-          <Tooltip content={t('miniapp.popup.goForward')} placement="bottom">
-            <ToolbarButton
-              onClick={handleGoForward}
-              $disabled={!canGoForward}
-              aria-label={t('miniapp.popup.goForward')}
-              aria-disabled={!canGoForward}>
-              <ArrowRightOutlined />
-            </ToolbarButton>
-          </Tooltip>
-
-          <Tooltip content={t('miniapp.popup.refresh')} placement="bottom">
-            <ToolbarButton onClick={onReload} aria-label={t('miniapp.popup.refresh')}>
-              <ReloadOutlined />
-            </ToolbarButton>
-          </Tooltip>
-        </ButtonGroup>
-      </LeftSection>
-
-      <RightSection>
-        <ButtonGroup>
-          {canOpenExternalLink && (
-            <Tooltip content={t('miniapp.popup.openExternal')} placement="bottom">
-              <ToolbarButton onClick={handleOpenLink} aria-label={t('miniapp.popup.openExternal')}>
-                <ExportOutlined />
-              </ToolbarButton>
-            </Tooltip>
-          )}
-
-          {canPinned && (
-            <Tooltip
-              content={isPinned ? t('miniapp.remove_from_launchpad') : t('miniapp.add_to_launchpad')}
-              placement="bottom">
-              <ToolbarButton
-                onClick={handleTogglePin}
-                $active={isPinned}
-                aria-label={isPinned ? t('miniapp.remove_from_launchpad') : t('miniapp.add_to_launchpad')}
-                aria-pressed={isPinned}>
-                <PushpinOutlined />
-              </ToolbarButton>
-            </Tooltip>
-          )}
-
+        {canPinned && (
           <Tooltip
-            content={
-              openLinkExternal ? t('miniapp.popup.open_link_external_on') : t('miniapp.popup.open_link_external_off')
-            }
+            content={isPinned ? t('miniapp.remove_from_launchpad') : t('miniapp.add_to_launchpad')}
             placement="bottom">
-            <ToolbarButton
-              onClick={handleToggleOpenExternal}
-              $active={openLinkExternal}
-              aria-label={
-                openLinkExternal ? t('miniapp.popup.open_link_external_on') : t('miniapp.popup.open_link_external_off')
-              }
-              aria-pressed={openLinkExternal}>
-              <LinkOutlined />
-            </ToolbarButton>
+            <ToolbarIconButton
+              label={isPinned ? t('miniapp.remove_from_launchpad') : t('miniapp.add_to_launchpad')}
+              onClick={handleTogglePin}
+              active={isPinned}>
+              <Pin className="size-4" />
+            </ToolbarIconButton>
           </Tooltip>
+        )}
 
-          {isDev && (
-            <Tooltip content={t('miniapp.popup.devtools')} placement="bottom">
-              <ToolbarButton onClick={onOpenDevTools} aria-label={t('miniapp.popup.devtools')}>
-                <CodeOutlined />
-              </ToolbarButton>
-            </Tooltip>
-          )}
+        <Tooltip
+          content={openLinkExternal ? t('miniapp.popup.open_link_external_on') : t('miniapp.popup.open_link_external_off')}
+          placement="bottom">
+          <ToolbarIconButton
+            label={openLinkExternal ? t('miniapp.popup.open_link_external_on') : t('miniapp.popup.open_link_external_off')}
+            onClick={handleToggleOpenExternal}
+            active={!!openLinkExternal}>
+            <Link2 className="size-4" />
+          </ToolbarIconButton>
+        </Tooltip>
 
-          <Tooltip content={t('miniapp.popup.minimize')} placement="bottom">
-            <ToolbarButton onClick={handleMinimize} aria-label={t('miniapp.popup.minimize')}>
-              <MinusOutlined />
-            </ToolbarButton>
+        {isDev && (
+          <Tooltip content={t('miniapp.popup.devtools')} placement="bottom">
+            <ToolbarIconButton label={t('miniapp.popup.devtools')} onClick={onOpenDevTools}>
+              <Code2 className="size-4" />
+            </ToolbarIconButton>
           </Tooltip>
-        </ButtonGroup>
-      </RightSection>
-    </ToolbarContainer>
+        )}
+
+        <Tooltip content={t('miniapp.popup.minimize')} placement="bottom">
+          <ToolbarIconButton label={t('miniapp.popup.minimize')} onClick={handleMinimize}>
+            <Minimize2 className="size-4" />
+          </ToolbarIconButton>
+        </Tooltip>
+      </div>
+    </div>
   )
 }
-
-const ToolbarContainer = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 35px;
-  padding: 0 12px;
-  background-color: var(--color-background);
-  flex-shrink: 0;
-`
-
-const LeftSection = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`
-
-const RightSection = styled.div`
-  display: flex;
-  align-items: center;
-`
-
-const ButtonGroup = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 2px;
-`
-
-const ToolbarButton = styled.button<{
-  $disabled?: boolean
-  $active?: boolean
-}>`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  background: ${({ $active }) => ($active ? 'var(--color-primary-bg)' : 'transparent')};
-  color: ${({ $disabled, $active }) =>
-    $disabled ? 'var(--color-text-3)' : $active ? 'var(--color-primary)' : 'var(--color-text-2)'};
-  cursor: ${({ $disabled }) => ($disabled ? 'default' : 'pointer')};
-  transition: all 0.2s ease;
-  font-size: 12px;
-
-  &:hover {
-    background: ${({ $disabled, $active }) =>
-      $disabled ? 'transparent' : $active ? 'var(--color-primary-bg)' : 'var(--color-background-soft)'};
-    color: ${({ $disabled, $active }) =>
-      $disabled ? 'var(--color-text-3)' : $active ? 'var(--color-primary)' : 'var(--color-text-1)'};
-  }
-
-  &:active {
-    transform: ${({ $disabled }) => ($disabled ? 'none' : 'scale(0.95)')};
-  }
-`
 
 export default MinimalToolbar

@@ -1,4 +1,3 @@
-import { loggerService } from '@logger'
 import { LogoAvatar } from '@renderer/components/Icons'
 import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
@@ -11,13 +10,10 @@ import type { WebviewTag } from 'electron'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import BeatLoader from 'react-spinners/BeatLoader'
-import styled from 'styled-components'
 
-// Tab mode page shell — relies on the global MiniAppTabsPool instead of creating WebViews directly
+import MiniAppFullPageView from './components/MiniAppFullPageView'
 import MinimalToolbar from './components/MinimalToolbar'
 import WebviewSearch from './components/WebviewSearch'
-
-const logger = loggerService.withContext('MiniAppPage')
 
 const MiniAppPage: FC = () => {
   const { appId } = useParams({ strict: false })
@@ -26,105 +22,82 @@ const MiniAppPage: FC = () => {
   const { allApps } = useMiniApps()
   const navigate = useNavigate()
 
-  // Remember the initial navbar position when component mounts
-  const initialIsTopNavbar = useRef<boolean>(isTopNavbar)
-  const hasRedirected = useRef<boolean>(false)
-
-  // Initialize TabsService with cache reference
   useEffect(() => {
     if (miniAppsCache) {
       tabsService.setMiniAppsCache(miniAppsCache)
     }
   }, [miniAppsCache])
 
-  // Debug: track navbar position changes
-  useEffect(() => {
-    if (initialIsTopNavbar.current !== isTopNavbar) {
-      logger.debug(`NavBar position changed from ${initialIsTopNavbar.current} to ${isTopNavbar}`)
-    }
-  }, [isTopNavbar])
-
-  // Find the app from all available apps (including cached ones)
   const app = useMemo((): MiniApp | null => {
-    if (!appId) return null
+    if (!appId) {
+      return null
+    }
 
-    // First try to find in all apps from DataApi
-    const found = allApps.find((a) => a.appId === appId)
+    const found = allApps.find((item) => item.appId === appId)
 
-    // If not found and we have cache, try to find in cache (for temporary apps)
     if (!found && miniAppsCache) {
       return miniAppsCache.get(appId) ?? null
     }
 
-    if (!found) return null
-
-    return found
-  }, [appId, allApps, miniAppsCache])
+    return found ?? null
+  }, [allApps, appId, miniAppsCache])
 
   useEffect(() => {
-    // If app not found, redirect to apps list
     if (!app) {
       void navigate({ to: '/app/miniapp' })
       return
     }
 
-    // For sidebar navigation, redirect to apps list and open popup
-    // Only check once and only if we haven't already redirected
-    if (!initialIsTopNavbar.current && !hasRedirected.current) {
-      hasRedirected.current = true
-      void navigate({ to: '/app/miniapp' })
-      // Open popup after navigation
-      setTimeout(() => {
-        openMiniAppKeepAlive(app)
-      }, 100)
-      return
-    }
+    openMiniAppKeepAlive(app)
+  }, [app, navigate, openMiniAppKeepAlive])
 
-    // For top navbar mode, integrate with cache system
-    if (initialIsTopNavbar.current) {
-      // Always call to ensure currentMiniAppId stays in sync with the route-changed appId
-      openMiniAppKeepAlive(app)
-    }
-  }, [app, navigate, openMiniAppKeepAlive, initialIsTopNavbar])
-
-  // -------------- Tab Shell logic --------------
-  // Hooks must be called before any return, so define them early with null-checks inside
   const webviewRef = useRef<WebviewTag | null>(null)
   const [isReady, setIsReady] = useState<boolean>(() => (app ? getWebviewLoaded(app.appId) : false))
   const [currentUrl, setCurrentUrl] = useState<string | null>(app?.url ?? null)
-
-  // Get the webview element from the pool (avoid re-running on openedKeepAliveMiniApps.length changes)
   const webviewCleanupRef = useRef<(() => void) | null>(null)
 
   const attachWebview = useCallback(() => {
-    if (!app) return true // No app — stop monitoring
-    const selector = `webview[data-miniapp-id="${app.appId}"]`
-    const el = document.querySelector<WebviewTag>(selector)
-    if (!el) return false
-
-    if (webviewRef.current === el) return true // Already attached
-
-    webviewRef.current = el
-    const handleInPageNav = (e: any) => setCurrentUrl(e.url)
-    el.addEventListener('did-navigate-in-page', handleInPageNav)
-    webviewCleanupRef.current = () => {
-      el.removeEventListener('did-navigate-in-page', handleInPageNav)
+    if (!app) {
+      return true
     }
+
+    const selector = `webview[data-miniapp-id="${app.appId}"]`
+    const element = document.querySelector<WebviewTag>(selector)
+    if (!element) {
+      return false
+    }
+
+    if (webviewRef.current === element) {
+      return true
+    }
+
+    webviewRef.current = element
+
+    const handleInPageNav = (event: { url: string }) => setCurrentUrl(event.url)
+    element.addEventListener('did-navigate-in-page', handleInPageNav as EventListener)
+
+    webviewCleanupRef.current = () => {
+      element.removeEventListener('did-navigate-in-page', handleInPageNav as EventListener)
+    }
+
     return true
   }, [app])
 
   useEffect(() => {
-    if (!app) return
+    if (!app) {
+      return
+    }
 
-    // Try immediate attachment first
-    if (attachWebview()) return () => webviewCleanupRef.current?.()
+    if (attachWebview()) {
+      return () => webviewCleanupRef.current?.()
+    }
 
-    // If not yet created, observe DOM changes (lightweight + auto-disconnect)
     const observer = new MutationObserver(() => {
       if (attachWebview()) {
         observer.disconnect()
       }
     })
+
     observer.observe(document.body, { childList: true, subtree: true })
 
     return () => {
@@ -133,35 +106,44 @@ const MiniAppPage: FC = () => {
     }
   }, [app, attachWebview])
 
-  // Event-driven wait for load completion (replaces fixed 150ms polling)
   useEffect(() => {
-    if (!app) return
-    if (getWebviewLoaded(app.appId)) {
-      // Already loaded
-      if (!isReady) setIsReady(true)
+    if (!app) {
       return
     }
+
+    if (getWebviewLoaded(app.appId)) {
+      if (!isReady) {
+        setIsReady(true)
+      }
+      return
+    }
+
     let mounted = true
     const unsubscribe = onWebviewStateChange(app.appId, (loaded) => {
-      if (!mounted) return
+      if (!mounted) {
+        return
+      }
       if (loaded) {
         setIsReady(true)
         unsubscribe()
       }
     })
+
     return () => {
       mounted = false
       unsubscribe()
     }
   }, [app, isReady])
 
-  // Early return if conditions not met (all hooks already called)
-  if (!app || !initialIsTopNavbar.current) {
+  if (!app) {
     return null
   }
 
+  if (!isTopNavbar) {
+    return <MiniAppFullPageView app={app} />
+  }
+
   const handleReload = () => {
-    if (!app) return
     if (webviewRef.current) {
       setWebviewLoaded(app.appId, false)
       setIsReady(false)
@@ -170,59 +152,28 @@ const MiniAppPage: FC = () => {
     }
   }
 
-  const handleOpenDevTools = () => {
-    webviewRef.current?.openDevTools()
-  }
-
   return (
-    <ShellContainer>
-      <ToolbarWrapper>
+    <div className="pointer-events-none relative z-[3] flex h-full w-full flex-col">
+      <div className="pointer-events-auto">
         <MinimalToolbar
           app={app}
           webviewRef={webviewRef}
-          // currentUrl may be null (navigation not yet captured); fallback to app.url when opening externally
           currentUrl={currentUrl}
           onReload={handleReload}
-          onOpenDevTools={handleOpenDevTools}
+          onOpenDevTools={() => webviewRef.current?.openDevTools()}
         />
-      </ToolbarWrapper>
-      <WebviewSearch webviewRef={webviewRef} isWebviewReady={isReady} appId={app.appId} />
+      </div>
+      <div className="pointer-events-auto">
+        <WebviewSearch webviewRef={webviewRef} isWebviewReady={isReady} appId={app.appId} />
+      </div>
       {!isReady && (
-        <LoadingMask>
+        <div className="pointer-events-auto absolute inset-x-0 top-[35px] bottom-0 z-[4] flex flex-col items-center justify-center gap-3 bg-[var(--color-background)]">
           <LogoAvatar logo={app.logo} size={60} />
-          <BeatLoader color="var(--color-text-2)" size={8} style={{ marginTop: 12 }} />
-        </LoadingMask>
+          <BeatLoader color="var(--color-text-2)" size={8} />
+        </div>
       )}
-    </ShellContainer>
+    </div>
   )
 }
-const ShellContainer = styled.div`
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  z-index: 3; /* Above the webviews in the pool */
-  pointer-events: none; /* Let lower webviews be interactive by default */
-  > * {
-    pointer-events: auto;
-  }
-`
-
-const ToolbarWrapper = styled.div`
-  flex-shrink: 0;
-`
-
-const LoadingMask = styled.div`
-  position: absolute;
-  inset: 35px 0 0 0; /* Avoid toolbar height */
-  display: flex;
-  flex-direction: column; /* Vertical stacking */
-  align-items: center;
-  justify-content: center;
-  background: var(--color-background);
-  z-index: 4;
-  gap: 12px;
-`
 
 export default MiniAppPage

@@ -10,6 +10,7 @@ const logger = loggerService.withContext('TabsService')
 
 export class TabsService {
   private miniAppsCache: LRUCache<string, MiniApp> | null = null
+  private closingTabIds = new Set<string>()
 
   /**
    * Sets the reference to the mini-apps LRU cache used for managing mini-app lifecycle and cleanup.
@@ -29,50 +30,61 @@ export class TabsService {
    * @returns 是否成功关闭
    */
   public closeTab(tabId: string): boolean {
-    const state = store.getState()
-    const tabs = state.tabs.tabs
-    const activeTabId = state.tabs.activeTabId
-
-    const tabToClose = tabs.find((tab) => tab.id === tabId)
-    if (!tabToClose) {
-      logger.warn(`Tab with id ${tabId} not found`)
+    if (this.closingTabIds.has(tabId)) {
+      logger.debug(`Skipping recursive close for tab ${tabId}`)
       return false
     }
 
-    // 如果只有一个标签页，不允许关闭
-    if (tabs.length === 1) {
-      logger.warn('Cannot close the last tab')
-      return false
-    }
+    this.closingTabIds.add(tabId)
 
-    // 如果关闭的是当前激活的标签页，需要切换到其他标签页
-    if (tabId === activeTabId) {
-      const remainingTabs = tabs.filter((tab) => tab.id !== tabId)
-      const lastTab = remainingTabs[remainingTabs.length - 1]
+    try {
+      const state = store.getState()
+      const tabs = state.tabs.tabs
+      const activeTabId = state.tabs.activeTabId
 
-      store.dispatch(setActiveTab(lastTab.id))
-
-      // 使用 NavigationService 导航到新的标签页
-      if (NavigationService.navigate) {
-        void NavigationService.navigate({ to: lastTab.path })
-      } else {
-        logger.warn('Navigation service not ready, will navigate on next render')
-        setTimeout(() => {
-          if (NavigationService.navigate) {
-            void NavigationService.navigate({ to: lastTab.path })
-          }
-        }, 100)
+      const tabToClose = tabs.find((tab) => tab.id === tabId)
+      if (!tabToClose) {
+        logger.warn(`Tab with id ${tabId} not found`)
+        return false
       }
+
+      // 如果只有一个标签页，不允许关闭
+      if (tabs.length === 1) {
+        logger.warn('Cannot close the last tab')
+        return false
+      }
+
+      // 如果关闭的是当前激活的标签页，需要切换到其他标签页
+      if (tabId === activeTabId) {
+        const remainingTabs = tabs.filter((tab) => tab.id !== tabId)
+        const lastTab = remainingTabs[remainingTabs.length - 1]
+
+        store.dispatch(setActiveTab(lastTab.id))
+
+        // 使用 NavigationService 导航到新的标签页
+        if (NavigationService.navigate) {
+          void NavigationService.navigate({ to: lastTab.path })
+        } else {
+          logger.warn('Navigation service not ready, will navigate on next render')
+          setTimeout(() => {
+            if (NavigationService.navigate) {
+              void NavigationService.navigate({ to: lastTab.path })
+            }
+          }, 100)
+        }
+      }
+
+      // Clean up mini-app cache if this is a mini-app tab
+      this.cleanupMiniAppCache(tabId)
+
+      // 使用 Redux action 移除标签页
+      store.dispatch(removeTab(tabId))
+
+      logger.info(`Tab ${tabId} closed successfully`)
+      return true
+    } finally {
+      this.closingTabIds.delete(tabId)
     }
-
-    // Clean up mini-app cache if this is a mini-app tab
-    this.cleanupMiniAppCache(tabId)
-
-    // 使用 Redux action 移除标签页
-    store.dispatch(removeTab(tabId))
-
-    logger.info(`Tab ${tabId} closed successfully`)
-    return true
   }
 
   /**

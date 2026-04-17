@@ -8,7 +8,6 @@ import type { WebviewTag } from 'electron'
 import type { FC } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BeatLoader from 'react-spinners/BeatLoader'
-import styled from 'styled-components'
 
 import MinimalToolbar from './MinimalToolbar'
 
@@ -24,27 +23,21 @@ const MiniAppFullPageView: FC<Props> = ({ app }) => {
   const [currentUrl, setCurrentUrl] = useState<string | null>(null)
   const [openLinkExternal] = usePreference('feature.miniapp.open_link_external')
 
-  // Debug: log isReady state changes
   useEffect(() => {
     logger.debug(`isReady state changed to: ${isReady}`)
   }, [isReady])
 
-  // Initialize when app changes - smart loading state detection using global state
   useEffect(() => {
     setCurrentUrl(app.url)
 
-    // Check if this WebView has been loaded before using global state manager
     if (getWebviewLoaded(app.appId)) {
       logger.debug(`App ${app.appId} already loaded before, setting ready immediately`)
       setIsReady(true)
-      return // No cleanup needed for immediate ready state
-    } else {
-      logger.debug(`App ${app.appId} not loaded before, showing loading state`)
-      setIsReady(false)
-
-      // Backup timer logic removed as requested—loading animation will show indefinitely if needed.
-      // (See version control history for previous implementation.)
+      return
     }
+
+    logger.debug(`App ${app.appId} not loaded before, showing loading state`)
+    setIsReady(false)
   }, [app])
 
   const handleWebviewSetRef = useCallback((_appId: string, element: WebviewTag | null) => {
@@ -62,10 +55,8 @@ const MiniAppFullPageView: FC<Props> = ({ app }) => {
         void window.api.webview.setOpenLinkExternal(webviewId, openLinkExternal)
       }
 
-      // Mark this WebView as loaded for future use in global state
       setWebviewLoaded(appId, true)
 
-      // Use small delay like MiniAppPopupContainer (100ms) to ensure content is visible
       if (appId === app.appId) {
         setTimeout(() => {
           logger.debug(`WebView loaded callback: setting isReady to true for ${appId}`)
@@ -73,7 +64,7 @@ const MiniAppFullPageView: FC<Props> = ({ app }) => {
         }, 100)
       }
     },
-    [openLinkExternal, app.appId]
+    [app.appId, openLinkExternal]
   )
 
   const handleWebviewNavigate = useCallback((_appId: string, url: string) => {
@@ -83,37 +74,30 @@ const MiniAppFullPageView: FC<Props> = ({ app }) => {
 
   const handleReload = useCallback(() => {
     if (webviewRef.current) {
-      // Clear the loaded state for this app since we're reloading using global state
       setWebviewLoaded(app.appId, false)
-      setIsReady(false) // Set loading state when reloading
+      setIsReady(false)
       webviewRef.current.src = app.url
     }
-  }, [app.url, app.appId])
-
-  const handleOpenDevTools = useCallback(() => {
-    if (webviewRef.current) {
-      webviewRef.current.openDevTools()
-    }
-  }, [])
+  }, [app.appId, app.url])
 
   return (
-    <Container>
+    <div className="flex h-full flex-col overflow-hidden">
       <MinimalToolbar
         app={app}
         webviewRef={webviewRef}
         currentUrl={currentUrl}
         onReload={handleReload}
-        onOpenDevTools={handleOpenDevTools}
+        onOpenDevTools={() => webviewRef.current?.openDevTools()}
       />
 
-      <WebviewArea>
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--color-background)]">
         {!isReady && (
-          <LoadingMask>
-            <LoadingOverlay>
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--color-background)]">
+            <div className="flex flex-col items-center">
               <LogoAvatar logo={app.logo} size={60} />
               <BeatLoader color="var(--color-text-2)" size={8} style={{ marginTop: 12 }} />
-            </LoadingOverlay>
-          </LoadingMask>
+            </div>
+          </div>
         )}
 
         <WebviewContainer
@@ -124,44 +108,9 @@ const MiniAppFullPageView: FC<Props> = ({ app }) => {
           onLoadedCallback={handleWebviewLoaded}
           onNavigateCallback={handleWebviewNavigate}
         />
-      </WebviewArea>
-    </Container>
+      </div>
+    </div>
   )
 }
-
-const Container = styled.div`
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-`
-
-const WebviewArea = styled.div`
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  background-color: var(--color-background);
-  min-height: 0; /* Ensure flex child can shrink */
-`
-
-const LoadingMask = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--color-background);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`
-
-const LoadingOverlay = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: none;
-`
 
 export default MiniAppFullPageView

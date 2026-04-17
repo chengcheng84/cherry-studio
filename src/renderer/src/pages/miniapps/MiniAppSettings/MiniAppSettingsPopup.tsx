@@ -1,6 +1,8 @@
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@cherrystudio/ui'
 import { TopView } from '@renderer/components/TopView'
-import { Modal } from 'antd'
-import { useState } from 'react'
+import { X } from 'lucide-react'
+import type { FC } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import MiniAppSettings from './MiniAppSettings'
@@ -9,37 +11,45 @@ interface Props {
   resolve: (data: any) => void
 }
 
-const PopupContainer: React.FC<Props> = ({ resolve }) => {
+const PopupContainer: FC<Props> = ({ resolve }) => {
   const [open, setOpen] = useState(true)
   const { t } = useTranslation()
 
-  const onOk = () => {
+  const handleClose = () => {
     setOpen(false)
   }
 
-  const onCancel = () => {
-    setOpen(false)
-  }
+  useEffect(() => {
+    if (!open) {
+      const timer = setTimeout(() => resolve({}), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [open, resolve])
 
-  const onClose = () => {
-    resolve({})
-  }
-
-  MiniAppSettingsPopup.hide = onCancel
+  MiniAppSettingsPopup.hide = handleClose
 
   return (
-    <Modal
-      open={open}
-      onOk={onOk}
-      width="80vw"
-      title={t('settings.miniapps.display_title')}
-      onCancel={onCancel}
-      afterClose={onClose}
-      footer={null}
-      transitionName="animation-move-down"
-      centered>
-      <MiniAppSettings />
-    </Modal>
+    <Drawer open={open} direction="right" onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
+      <DrawerContent className="right-0 h-full w-[min(760px,100vw)] max-w-none border-l border-[var(--color-border)] bg-[var(--color-background)] p-0">
+        <DrawerHeader className="border-b border-[var(--color-border)] px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DrawerTitle className="text-base text-[var(--color-text-1)]">{t('settings.miniapps.display_title')}</DrawerTitle>
+            </div>
+            <button
+              type="button"
+              className="flex size-9 items-center justify-center rounded-full text-[var(--color-text-3)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]"
+              onClick={handleClose}
+              aria-label={t('common.close')}>
+              <X className="size-4" />
+            </button>
+          </div>
+        </DrawerHeader>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MiniAppSettings />
+        </div>
+      </DrawerContent>
+    </Drawer>
   )
 }
 
@@ -54,8 +64,8 @@ export default class MiniAppSettingsPopup {
     return new Promise<any>((resolve) => {
       TopView.show(
         <PopupContainer
-          resolve={(v) => {
-            resolve(v)
+          resolve={(value) => {
+            resolve(value)
             TopView.hide(TopViewKey)
           }}
         />,
