@@ -1,9 +1,14 @@
+import NavigationService from '@renderer/services/NavigationService'
 import { IpcChannel } from '@shared/IpcChannel'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 const NavigationHandler: React.FC = () => {
   const navigate = useNavigate()
+
+  useEffect(() => {
+    NavigationService.setNavigate(navigate)
+  }, [navigate])
 
   useEffect(() => {
     const handleNavigateToAbout = () => {

@@ -1,17 +1,23 @@
-import { Button, Drawer, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle, Input } from '@cherrystudio/ui'
+import { Button, Input } from '@cherrystudio/ui'
 import { loggerService } from '@logger'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { cn } from '@renderer/utils'
 import { ORIGIN_DEFAULT_MINI_APPS } from '@shared/data/presets/mini-apps'
-import { Globe, ImagePlus, Plus, Upload, X } from 'lucide-react'
-import type { ChangeEvent, FC, FormEvent } from 'react'
+import { Link, Plus, Upload, X } from 'lucide-react'
+import type { ChangeEvent, FC, FormEvent, ReactNode } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getCustomMiniAppIdError } from './utils'
 
-interface Props {
+interface NewAppButtonProps {
   size?: number
+  compact?: boolean
+  onClick?: () => void
+}
+
+interface MiniAppCreatePanelProps {
+  onClose: () => void
 }
 
 interface FormValues {
@@ -35,9 +41,51 @@ const CUSTOM_ID_ERROR_TRANSLATIONS = {
   duplicate_ids: 'settings.miniapps.custom.duplicate_ids'
 } as const
 
-const NewAppButton: FC<Props> = ({ size = 60 }) => {
+const FormField = ({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) => (
+  <div className="space-y-1">
+    <label className="block text-[10px] text-muted-foreground/50">
+      {required && <span className="mr-0.5 text-red-400/60">*</span>}
+      {label}
+    </label>
+    {children}
+  </div>
+)
+
+const NewAppButton: FC<NewAppButtonProps> = ({ size = 60, compact = false, onClick }) => {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        compact
+          ? 'group flex flex-col items-center gap-1.5'
+          : 'group flex w-[104px] flex-col items-center gap-2 rounded-[24px] px-2 py-2 text-center transition hover:bg-accent/70'
+      )}
+      onClick={onClick}>
+      <span
+        className={cn(
+          compact
+            ? 'flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 border-dashed text-muted-foreground/70 transition group-hover:border-primary/40 group-hover:text-primary/70'
+            : 'flex items-center justify-center rounded-[24px] border border-border border-dashed bg-background text-muted-foreground transition group-hover:border-primary group-hover:bg-card group-hover:text-primary'
+        )}
+        style={compact ? undefined : { width: size + 10, height: size + 10 }}>
+        <Plus className={cn(compact ? 'size-4' : 'size-6')} />
+      </span>
+      <span
+        className={cn(
+          compact
+            ? 'max-w-[60px] truncate text-[10px] text-muted-foreground/70 transition group-hover:text-foreground'
+            : 'max-w-[88px] text-[12px] text-muted-foreground leading-4 transition group-hover:text-foreground'
+        )}>
+        {t('settings.miniapps.custom.title')}
+      </span>
+    </button>
+  )
+}
+
+export const MiniAppCreatePanel: FC<MiniAppCreatePanelProps> = ({ onClose }) => {
+  const { t } = useTranslation()
   const [logoType, setLogoType] = useState<'url' | 'file'>('url')
   const [formValues, setFormValues] = useState<FormValues>(DEFAULT_FORM_VALUES)
   const [fileName, setFileName] = useState('')
@@ -59,11 +107,9 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
     }
   }
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      resetForm()
-    }
+  const handleClose = () => {
+    resetForm()
+    onClose()
   }
 
   const handleFieldChange = (field: keyof FormValues) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -95,16 +141,13 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
     try {
       const base64Logo = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
-
         reader.onload = () => {
           if (typeof reader.result === 'string') {
             resolve(reader.result)
             return
           }
-
           reject(new Error('FileReader result is not a string'))
         }
-
         reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
         reader.readAsDataURL(file)
       })
@@ -124,17 +167,9 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
     const normalizedName = formValues.name.trim()
     const normalizedUrl = formValues.url.trim()
 
-    if (!normalizedId) {
-      nextErrors.id = t('settings.miniapps.custom.id_error')
-    }
-
-    if (!normalizedName) {
-      nextErrors.name = t('settings.miniapps.custom.name_error')
-    }
-
-    if (!normalizedUrl) {
-      nextErrors.url = t('settings.miniapps.custom.url_error')
-    }
+    if (!normalizedId) nextErrors.id = t('settings.miniapps.custom.id_error')
+    if (!normalizedName) nextErrors.name = t('settings.miniapps.custom.name_error')
+    if (!normalizedUrl) nextErrors.url = t('settings.miniapps.custom.url_error')
 
     if (normalizedId) {
       const idError = getCustomMiniAppIdError({
@@ -154,10 +189,7 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-
-    if (!validateForm()) {
-      return
-    }
+    if (!validateForm()) return
 
     setIsSubmitting(true)
 
@@ -172,7 +204,7 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
       })
 
       window.toast.success(t('settings.miniapps.custom.save_success'))
-      handleOpenChange(false)
+      handleClose()
     } catch (error) {
       window.toast.error(t('settings.miniapps.custom.save_error'))
       logger.error('Failed to save custom mini app:', error as Error)
@@ -184,195 +216,136 @@ const NewAppButton: FC<Props> = ({ size = 60 }) => {
   const hasLogoPreview = Boolean(formValues.logo)
 
   return (
-    <>
-      <button
-        type="button"
-        className="group flex w-[104px] flex-col items-center gap-2 rounded-[24px] px-2 py-2 text-center transition hover:bg-[var(--color-accent)]/70"
-        onClick={() => setOpen(true)}>
-        <span
-          className="flex items-center justify-center rounded-[24px] border border-dashed border-[var(--color-border)] bg-[var(--color-background-soft)] text-[var(--color-text-3)] transition group-hover:border-[var(--color-primary)] group-hover:bg-[var(--color-card)] group-hover:text-[var(--color-primary)]"
-          style={{ width: size + 10, height: size + 10 }}>
-          <Plus className="size-6" />
-        </span>
-        <span className="max-w-[88px] text-[12px] leading-4 text-[var(--color-text-3)] group-hover:text-[var(--color-text-1)]">
-          {t('settings.miniapps.custom.title')}
-        </span>
-      </button>
+    <section className="absolute top-2 right-2 bottom-2 z-50 flex w-[380px] flex-col overflow-hidden rounded-[8px] border border-border/30 bg-card shadow-2xl">
+      <div className="flex h-11 items-center justify-between border-border/15 border-b px-4">
+        <span className="text-[11px] text-foreground">{t('settings.miniapps.custom.edit_title')}</span>
+        <button
+          type="button"
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground/40 transition hover:bg-accent hover:text-foreground"
+          onClick={handleClose}
+          aria-label={t('common.close')}>
+          <X className="size-3.5" />
+        </button>
+      </div>
 
-      <Drawer open={open} direction="right" onOpenChange={handleOpenChange}>
-        <DrawerContent className="right-0 h-full w-[min(460px,100vw)] max-w-none border-l border-[var(--color-border)] bg-[var(--color-background)] p-0">
-          <DrawerHeader className="border-b border-[var(--color-border)] px-5 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <DrawerTitle className="text-base text-[var(--color-text-1)]">
-                  {t('settings.miniapps.custom.edit_title')}
-                </DrawerTitle>
-                <p className="text-sm text-[var(--color-text-3)]">{t('settings.miniapps.custom.title')}</p>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 [&::-webkit-scrollbar]:hidden">
+          <div className="flex flex-col items-center py-4">
+            {hasLogoPreview ? (
+              <img src={formValues.logo} alt="" className="h-14 w-14 rounded-xl object-cover shadow-sm" />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-lg text-primary-foreground shadow-sm">
+                {formValues.name.charAt(0).toUpperCase() || '?'}
               </div>
-              <button
-                type="button"
-                className="flex size-9 items-center justify-center rounded-full text-[var(--color-text-3)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]"
-                onClick={() => handleOpenChange(false)}
-                aria-label={t('common.close')}>
-                <X className="size-4" />
-              </button>
-            </div>
-          </DrawerHeader>
+            )}
+            <span className="mt-2 text-[11px] text-foreground/70">
+              {formValues.name || t('settings.miniapps.custom.title')}
+            </span>
+          </div>
 
-          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
-            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--color-text-1)]" htmlFor="miniapp-id">
-                  {t('settings.miniapps.custom.id')}
-                </label>
+          <div className="space-y-3">
+            <FormField label="ID" required>
+              <Input
+                value={formValues.id}
+                onChange={handleFieldChange('id')}
+                placeholder={t('settings.miniapps.custom.id_placeholder')}
+                disabled={isSubmitting}
+                aria-invalid={Boolean(fieldErrors.id)}
+                className="h-9 rounded-lg border-border/30 bg-accent/5 text-[11px] text-foreground shadow-none placeholder:text-muted-foreground/25 focus-visible:border-border/50 focus-visible:ring-0 disabled:opacity-40"
+              />
+              {fieldErrors.id && <p className="text-[10px] text-destructive">{fieldErrors.id}</p>}
+            </FormField>
+
+            <FormField label={t('settings.miniapps.custom.name')} required>
+              <Input
+                value={formValues.name}
+                onChange={handleFieldChange('name')}
+                placeholder={t('settings.miniapps.custom.name_placeholder')}
+                disabled={isSubmitting}
+                aria-invalid={Boolean(fieldErrors.name)}
+                className="h-9 rounded-lg border-border/30 bg-accent/5 text-[11px] text-foreground shadow-none placeholder:text-muted-foreground/25 focus-visible:border-border/50 focus-visible:ring-0 disabled:opacity-40"
+              />
+              {fieldErrors.name && <p className="text-[10px] text-destructive">{fieldErrors.name}</p>}
+            </FormField>
+
+            <FormField label="URL" required>
+              <Input
+                value={formValues.url}
+                onChange={handleFieldChange('url')}
+                placeholder="https://example.com"
+                disabled={isSubmitting}
+                aria-invalid={Boolean(fieldErrors.url)}
+                className="h-9 rounded-lg border-border/30 bg-accent/5 font-mono text-[11px] text-foreground shadow-none placeholder:text-muted-foreground/25 focus-visible:border-border/50 focus-visible:ring-0 disabled:opacity-40"
+              />
+              {fieldErrors.url && <p className="text-[10px] text-destructive">{fieldErrors.url}</p>}
+            </FormField>
+
+            <FormField label={t('settings.miniapps.custom.logo')}>
+              <div className="mb-2 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleLogoTypeChange('url')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] transition-colors',
+                    logoType === 'url' ? 'bg-accent text-foreground' : 'text-muted-foreground/40 hover:text-foreground'
+                  )}>
+                  <Link className="size-3" /> URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLogoTypeChange('file')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] transition-colors',
+                    logoType === 'file' ? 'bg-accent text-foreground' : 'text-muted-foreground/40 hover:text-foreground'
+                  )}>
+                  <Upload className="size-3" /> {t('settings.miniapps.custom.logo_upload_button')}
+                </button>
+              </div>
+
+              {logoType === 'url' ? (
                 <Input
-                  id="miniapp-id"
-                  value={formValues.id}
-                  onChange={handleFieldChange('id')}
-                  placeholder={t('settings.miniapps.custom.id_placeholder')}
-                  aria-invalid={Boolean(fieldErrors.id)}
+                  value={formValues.logo}
+                  onChange={handleFieldChange('logo')}
+                  placeholder={t('settings.miniapps.custom.logo_url_placeholder')}
+                  className="h-9 rounded-lg border-border/30 bg-accent/5 font-mono text-[11px] text-foreground shadow-none placeholder:text-muted-foreground/25 focus-visible:border-border/50 focus-visible:ring-0"
                 />
-                {fieldErrors.id && <p className="text-sm text-[var(--color-destructive)]">{fieldErrors.id}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--color-text-1)]" htmlFor="miniapp-name">
-                  {t('settings.miniapps.custom.name')}
+              ) : (
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/30 border-dashed bg-accent/5 px-3 py-2 transition hover:border-border/50">
+                  <Upload className="size-3 text-muted-foreground/30" />
+                  <span className="text-[10px] text-muted-foreground/40">
+                    {fileName || t('settings.miniapps.custom.logo_upload_label')}
+                  </span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {hasLogoPreview && (
+                    <img src={formValues.logo} alt="" className="ml-auto h-5 w-5 rounded object-cover" />
+                  )}
                 </label>
-                <Input
-                  id="miniapp-name"
-                  value={formValues.name}
-                  onChange={handleFieldChange('name')}
-                  placeholder={t('settings.miniapps.custom.name_placeholder')}
-                  aria-invalid={Boolean(fieldErrors.name)}
-                />
-                {fieldErrors.name && <p className="text-sm text-[var(--color-destructive)]">{fieldErrors.name}</p>}
-              </div>
+              )}
+            </FormField>
+          </div>
+        </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[var(--color-text-1)]" htmlFor="miniapp-url">
-                  {t('settings.miniapps.custom.url')}
-                </label>
-                <Input
-                  id="miniapp-url"
-                  value={formValues.url}
-                  onChange={handleFieldChange('url')}
-                  placeholder={t('settings.miniapps.custom.url_placeholder')}
-                  aria-invalid={Boolean(fieldErrors.url)}
-                />
-                {fieldErrors.url && <p className="text-sm text-[var(--color-destructive)]">{fieldErrors.url}</p>}
-              </div>
-
-              <div className="space-y-3">
-                <div className="text-sm font-medium text-[var(--color-text-1)]">
-                  {t('settings.miniapps.custom.logo')}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm transition',
-                      logoType === 'url'
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8 text-[var(--color-primary)]'
-                        : 'border-[var(--color-border)] text-[var(--color-text-2)] hover:bg-[var(--color-accent)]'
-                    )}
-                    onClick={() => handleLogoTypeChange('url')}>
-                    <Globe className="size-4" />
-                    {t('settings.miniapps.custom.logo_url')}
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm transition',
-                      logoType === 'file'
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8 text-[var(--color-primary)]'
-                        : 'border-[var(--color-border)] text-[var(--color-text-2)] hover:bg-[var(--color-accent)]'
-                    )}
-                    onClick={() => handleLogoTypeChange('file')}>
-                    <ImagePlus className="size-4" />
-                    {t('settings.miniapps.custom.logo_file')}
-                  </button>
-                </div>
-
-                {logoType === 'url' ? (
-                  <div className="space-y-2">
-                    <label className="text-sm text-[var(--color-text-2)]" htmlFor="miniapp-logo-url">
-                      {t('settings.miniapps.custom.logo_url_label')}
-                    </label>
-                    <Input
-                      id="miniapp-logo-url"
-                      value={formValues.logo}
-                      onChange={handleFieldChange('logo')}
-                      placeholder={t('settings.miniapps.custom.logo_url_placeholder')}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-sm text-[var(--color-text-2)]">
-                      {t('settings.miniapps.custom.logo_upload_label')}
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full justify-center gap-2"
-                      onClick={() => fileInputRef.current?.click()}>
-                      <Upload className="size-4" />
-                      {t('settings.miniapps.custom.logo_upload_button')}
-                    </Button>
-                    {fileName && <p className="text-sm text-[var(--color-text-3)]">{fileName}</p>}
-                  </div>
-                )}
-
-                <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-background-soft)] p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-3)]">
-                    {t('settings.miniapps.custom.logo')}
-                  </div>
-                  <div className="mt-3 flex items-center gap-3">
-                    <div className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)]">
-                      {hasLogoPreview ? (
-                        <img
-                          src={formValues.logo}
-                          alt={formValues.name || t('settings.miniapps.custom.title')}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Plus className="size-5 text-[var(--color-text-3)]" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--color-text-1)]">
-                        {formValues.name || t('settings.miniapps.custom.title')}
-                      </p>
-                      <p className="truncate text-sm text-[var(--color-text-3)]">
-                        {formValues.url || t('settings.miniapps.custom.url_placeholder')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <DrawerFooter className="border-t border-[var(--color-border)] px-5 py-4">
-              <div className="flex items-center justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {t('settings.miniapps.custom.save')}
-                </Button>
-              </div>
-            </DrawerFooter>
-          </form>
-        </DrawerContent>
-      </Drawer>
-    </>
+        <div className="flex items-center gap-2 border-border/15 border-t px-4 py-3">
+          <Button type="submit" disabled={isSubmitting} className="h-8 rounded-lg px-4 text-[11px]">
+            {t('settings.miniapps.custom.save')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleClose}
+            disabled={isSubmitting}
+            className="h-8 rounded-lg px-3 text-[11px] text-muted-foreground/50 hover:bg-accent hover:text-foreground">
+            {t('common.cancel')}
+          </Button>
+        </div>
+      </form>
+    </section>
   )
 }
 

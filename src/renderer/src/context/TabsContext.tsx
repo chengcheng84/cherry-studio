@@ -19,8 +19,18 @@ const DEFAULT_TAB: Tab = {
   isDormant: false
 }
 
+function isMiniAppDetailUrl(url: string): boolean {
+  return /^\/app\/mini-app\/[^/]+/.test(url)
+}
+
 function withLocalizedRouteTitle(tab: Tab): Tab {
   if (tab.type !== 'route') {
+    return tab
+  }
+  if (isMiniAppDetailUrl(tab.url)) {
+    return tab
+  }
+  if (tab.title && tab.title !== getDefaultRouteTitle(tab.url)) {
     return tab
   }
   return { ...tab, title: getDefaultRouteTitle(tab.url) }
@@ -289,6 +299,9 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       if (!forceNew) {
         const existingTab = tabs.find((t) => t.type === type && t.url === url)
         if (existingTab) {
+          if (title && existingTab.title !== title) {
+            updateTab(existingTab.id, { title })
+          }
           setActiveTab(existingTab.id)
           return existingTab.id
         }
@@ -306,7 +319,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       addTab(newTab)
       return newTab.id
     },
-    [tabs, setActiveTab, addTab]
+    [tabs, setActiveTab, addTab, updateTab]
   )
 
   /**

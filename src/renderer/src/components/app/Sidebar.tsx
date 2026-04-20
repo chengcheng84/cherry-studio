@@ -2,7 +2,6 @@ import { usePersistCache } from '@data/hooks/useCache'
 import { usePreference } from '@data/hooks/usePreference'
 import { AppLogo } from '@renderer/config/env'
 import useAvatar from '@renderer/hooks/useAvatar'
-import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { modelGenerating } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
@@ -82,7 +81,7 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
   const [userName] = usePreference('app.user.name')
   const [visibleSidebarIcons] = usePreference('ui.sidebar.icons.visible')
   const [showOpenedInSidebar] = usePreference('feature.mini_app.show_opened_in_sidebar')
-  const { activeTab, updateTab, openTab } = useTabs()
+  const { tabs, activeTab, updateTab, openTab, setActiveTab } = useTabs()
   const { defaultPaintingProvider } = useSettings()
 
   const [persistedWidth, setPersistedWidth] = usePersistCache('ui.sidebar.width')
@@ -103,32 +102,46 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
     [avatar, t, userName]
   )
 
-  const { openedKeepAliveMiniApps, currentMiniAppId, miniAppShow } = useMiniApps()
-  const { openMiniAppKeepAlive } = useMiniAppPopup()
+  const { allApps, openedKeepAliveMiniApps } = useMiniApps()
 
   const activeMiniAppTabs = useMemo<SidebarMiniAppTab[]>(() => {
     if (!showOpenedInSidebar) return []
-    return openedKeepAliveMiniApps.map((app) => ({
-      type: 'miniapp',
-      id: app.appId,
-      title: app.name,
-      miniApp: {
-        id: app.appId,
-        color: app.background,
-        url: app.url,
-        logo: app.logo as SidebarMiniApp['logo']
+    const miniAppTabs: SidebarMiniAppTab[] = []
+
+    for (const tab of tabs) {
+      const match = /^\/app\/mini-app\/([^/]+)/.exec(tab.url)
+      if (!match) {
+        continue
       }
-    }))
-  }, [showOpenedInSidebar, openedKeepAliveMiniApps])
+
+      const appId = decodeURIComponent(match[1])
+      const app =
+        allApps.find((item) => item.appId === appId) ?? openedKeepAliveMiniApps.find((item) => item.appId === appId)
+
+      miniAppTabs.push({
+        type: 'miniapp',
+        id: appId,
+        title: tab.title || app?.name || appId,
+        miniApp: {
+          id: appId,
+          color: app?.background,
+          url: app?.url || tab.url,
+          logo: app?.logo as SidebarMiniApp['logo']
+        }
+      })
+    }
+
+    return miniAppTabs
+  }, [allApps, openedKeepAliveMiniApps, showOpenedInSidebar, tabs])
 
   const handleMiniAppTabClick = useCallback(
     (tabId: string) => {
-      const app = openedKeepAliveMiniApps.find((a) => a.appId === tabId)
-      if (app) {
-        openMiniAppKeepAlive(app)
+      const tab = tabs.find((item) => item.url === `/app/mini-app/${tabId}`)
+      if (tab) {
+        setActiveTab(tab.id)
       }
     },
-    [openedKeepAliveMiniApps, openMiniAppKeepAlive]
+    [setActiveTab, tabs]
   )
 
   const [hoverVisible, setHoverVisible] = useState(false)
@@ -183,13 +196,18 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
     [activeTab, updateTab, openTab, defaultPaintingProvider]
   )
 
+  const activeMiniAppId = useMemo(() => {
+    const match = /^\/app\/mini-app\/([^/]+)/.exec(activeTab?.url || '')
+    return match ? decodeURIComponent(match[1]) : undefined
+  }, [activeTab?.url])
+
   const sidebarProps = {
     activeItem,
     items,
     title: 'Cherry Studio',
     logo: APP_LOGO,
     user: sidebarUser,
-    activeTabId: miniAppShow ? currentMiniAppId : undefined,
+    activeTabId: activeMiniAppId,
     dockedTabs: [],
     onItemClick: handleNavigate,
     onMiniAppTabClick: handleMiniAppTabClick,

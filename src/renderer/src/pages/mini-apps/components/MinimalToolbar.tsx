@@ -3,7 +3,7 @@ import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
 import { isDev } from '@renderer/config/constant'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
-import { tabsService } from '@renderer/services/TabsService'
+import { useTabs } from '@renderer/hooks/useTabs'
 import { cn } from '@renderer/utils'
 import type { MiniApp } from '@shared/data/types/miniApp'
 import type { WebviewTag } from 'electron'
@@ -59,6 +59,7 @@ const ToolbarIconButton = ({ label, onClick, disabled, active, children }: Toolb
 const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOpenDevTools }) => {
   const { t } = useTranslation()
   const { pinned, updatePinnedMiniApps, allApps } = useMiniApps()
+  const { closeTab } = useTabs()
   const [openLinkExternal, setOpenLinkExternal] = usePreference('feature.mini_app.open_link_external')
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
@@ -217,11 +218,8 @@ const MinimalToolbar: FC<Props> = ({ app, webviewRef, currentUrl, onReload, onOp
   }, [app.appId, scheduleNavigationUpdate, webviewRef])
 
   const handleMinimize = useCallback(() => {
-    const closed = tabsService.closeTab(`miniapp:${app.appId}`)
-    if (!closed) {
-      logger.warn('Failed to close miniapp tab from toolbar', { appId: app.appId })
-    }
-  }, [app.appId])
+    closeTab(`miniapp:${app.appId}`)
+  }, [app.appId, closeTab])
 
   const handleTogglePin = useCallback(() => {
     const newPinned = isPinned ? pinned.filter((item) => item.appId !== app.appId) : [...pinned, app]

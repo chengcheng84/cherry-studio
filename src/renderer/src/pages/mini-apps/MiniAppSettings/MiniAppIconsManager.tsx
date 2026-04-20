@@ -3,9 +3,8 @@ import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import { LogoAvatar } from '@renderer/components/Icons'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { getMiniAppsStatusLabel } from '@renderer/i18n/label'
-import { cn } from '@renderer/utils'
 import type { MiniApp } from '@shared/data/types/miniApp'
-import { ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -93,27 +92,29 @@ const MiniAppIconsManager: FC<MiniAppManagerProps> = ({
 
   const renderMiniAppItem = (app: MiniApp, provided: DraggableProvided, listType: ListType) => {
     const name = app.nameKey ? t(app.nameKey) : app.name
-    const MoveIcon = listType === 'visible' ? ChevronRight : ChevronLeft
+    const MoveIcon = listType === 'visible' ? EyeOff : Eye
 
     return (
       <div
         ref={provided.innerRef}
         {...provided.draggableProps}
         {...provided.dragHandleProps}
-        className="group flex items-center justify-between rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 shadow-[0_10px_30px_-24px_rgba(0,0,0,0.4)] transition hover:border-[var(--color-primary)]/30 hover:bg-[var(--color-accent)]/40">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="text-[var(--color-text-3)]">
-            <GripVertical className="size-4" />
-          </span>
-          <LogoAvatar logo={app.logo} size={16} />
-          <span className="truncate text-sm text-[var(--color-text-1)]">{name}</span>
-        </div>
+        className="group flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-[var(--color-accent)]/30">
+        <LogoAvatar logo={app.logo} size={20} />
+        <span
+          className={
+            listType === 'visible'
+              ? 'truncate text-[10px] text-[var(--color-text-1)]'
+              : 'truncate text-[10px] text-[var(--color-text-2)]/60'
+          }>
+          {name}
+        </span>
         <button
           type="button"
-          className="flex size-8 items-center justify-center rounded-full text-[var(--color-text-3)] opacity-0 transition hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)] group-hover:opacity-100"
+          className="ml-auto flex items-center justify-center text-[var(--color-text-3)]/0 transition group-hover:text-[var(--color-text-3)]/60"
           onClick={() => onMoveMiniApp(app, listType)}
           aria-label={name}>
-          <MoveIcon className="size-4" />
+          <MoveIcon className="size-3" />
         </button>
       </div>
     )
@@ -121,14 +122,18 @@ const MiniAppIconsManager: FC<MiniAppManagerProps> = ({
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {(['visible', 'disabled'] as const).map((listType) => (
           <div
             key={listType}
-            className="min-w-0 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-background-soft)]/70 p-3">
-            <div className="mb-3 flex items-center justify-between px-1">
-              <h4 className="text-sm font-medium text-[var(--color-text-1)]">{getMiniAppsStatusLabel(listType)}</h4>
-              <span className="text-xs text-[var(--color-text-3)]">
+            className={
+              listType === 'visible'
+                ? 'flex min-w-0 flex-1 flex-col border-r border-[var(--color-border)]/10'
+                : 'flex min-w-0 flex-1 flex-col'
+            }>
+            <div className="flex items-center justify-between px-3 py-2">
+              <h4 className="text-[10px] text-[var(--color-text-3)]/70">{getMiniAppsStatusLabel(listType)}</h4>
+              <span className="text-[9px] text-[var(--color-text-3)]/35">
                 {(listType === 'visible' ? visibleMiniApps : disabledMiniApps).length}
               </span>
             </div>
@@ -138,10 +143,7 @@ const MiniAppIconsManager: FC<MiniAppManagerProps> = ({
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
-                  className={cn(
-                    'flex min-h-[320px] flex-col gap-2 rounded-[20px] border border-dashed border-[var(--color-border)] bg-[var(--color-background)] p-2',
-                    listType === 'disabled' && disabledMiniApps.length === 0 && 'justify-center'
-                  )}>
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto [&::-webkit-scrollbar]:hidden">
                   {(listType === 'visible' ? visibleMiniApps : disabledMiniApps).map((app, index) => (
                     <Draggable key={app.appId} draggableId={String(app.appId)} index={index}>
                       {(draggableProvided: DraggableProvided) => renderMiniAppItem(app, draggableProvided, listType)}
@@ -149,8 +151,9 @@ const MiniAppIconsManager: FC<MiniAppManagerProps> = ({
                   ))}
 
                   {disabledMiniApps.length === 0 && listType === 'disabled' && (
-                    <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-[var(--color-text-3)]">
-                      {t('settings.miniapps.empty')}
+                    <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
+                      <EyeOff className="mb-1 size-3.5 text-[var(--color-text-3)]/15" />
+                      <span className="text-[9px] text-[var(--color-text-3)]/35">{t('settings.miniapps.empty')}</span>
                     </div>
                   )}
 

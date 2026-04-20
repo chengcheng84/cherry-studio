@@ -1,9 +1,12 @@
 import '@renderer/databases'
 
 import useMacTransparentWindow from '@renderer/hooks/useMacTransparentWindow'
+import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
+import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { cn } from '@renderer/utils'
 import { getDefaultRouteTitle } from '@renderer/utils/routeTitle'
 import { Activity } from 'react'
+import { useEffect } from 'react'
 
 import { useTabs } from '../../hooks/useTabs'
 import Sidebar from '../app/Sidebar'
@@ -23,10 +26,54 @@ const WebviewContainer = ({ url, isActive }: { url: string; isActive: boolean })
 export const AppShell = () => {
   const isMacTransparentWindow = useMacTransparentWindow()
   const { tabs, activeTabId, setActiveTab, closeTab, updateTab, addTab, reorderTabs, pinTab, unpinTab } = useTabs()
+  const { allApps, setCurrentMiniAppId, setMiniAppShow } = useMiniApps()
+  const { closeMiniApp } = useMiniAppPopup()
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId)
+
+  const getRouteTabTitle = (url: string, fallbackTitle?: string) => {
+    const match = /^\/app\/mini-app\/([^/]+)/.exec(url)
+    if (!match) {
+      return getDefaultRouteTitle(url)
+    }
+
+    const appId = decodeURIComponent(match[1])
+    const app = allApps.find((item) => item.appId === appId)
+    return app?.name || fallbackTitle || getDefaultRouteTitle(url)
+  }
+
+  useEffect(() => {
+    const activeUrl = activeTab?.url ?? ''
+    if (activeUrl.startsWith('/app/mini-app/')) {
+      const appId = activeUrl.replace('/app/mini-app/', '')
+      setCurrentMiniAppId(appId)
+      setMiniAppShow(true)
+      return
+    }
+
+    setCurrentMiniAppId('')
+    setMiniAppShow(false)
+  }, [activeTab?.url, setCurrentMiniAppId, setMiniAppShow])
 
   // Sync internal navigation back to tab state with default title
   const handleUrlChange = (tabId: string, url: string) => {
-    updateTab(tabId, { url, title: getDefaultRouteTitle(url) })
+    const currentTab = tabs.find((tab) => tab.id === tabId)
+    updateTab(tabId, { url, title: getRouteTabTitle(url, currentTab?.title) })
+  }
+
+  const handleCloseTab = (tabId: string) => {
+    const tab = tabs.find((item) => item.id === tabId)
+    if (!tab) {
+      return
+    }
+
+    const match = /^\/app\/mini-app\/([^/]+)/.exec(tab.url)
+    if (match) {
+      closeMiniApp(decodeURIComponent(match[1]))
+      return
+    }
+
+    closeTab(tabId)
   }
 
   return (
@@ -40,7 +87,7 @@ export const AppShell = () => {
         tabs={tabs}
         activeTabId={activeTabId}
         setActiveTab={setActiveTab}
-        closeTab={closeTab}
+        closeTab={handleCloseTab}
         addTab={addTab}
         reorderTabs={reorderTabs}
         pinTab={pinTab}

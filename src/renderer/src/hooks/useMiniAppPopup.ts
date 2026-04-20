@@ -1,8 +1,7 @@
 import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
-import NavigationService from '@renderer/services/NavigationService'
-import { tabsService } from '@renderer/services/TabsService'
+import { useTabs } from '@renderer/hooks/useTabs'
 import { clearWebviewState } from '@renderer/utils/webviewStateManager'
 import type { MiniApp, MiniAppId } from '@shared/data/types/miniApp'
 import { LRUCache } from 'lru-cache'
@@ -42,13 +41,18 @@ export const useMiniAppPopup = () => {
     openedKeepAliveMiniApps,
     currentMiniAppId,
     openedOneOffMiniApp,
-    miniAppShow,
     setOpenedKeepAliveMiniApps,
     setOpenedOneOffMiniApp,
     setCurrentMiniAppId,
     setMiniAppShow
   } = useMiniApps()
   const [maxKeepAliveMiniApps] = usePreference('feature.mini_app.max_keep_alive')
+  const { tabs, openTab, closeTab } = useTabs()
+  const tabsRef = useRef(tabs)
+  const closeTabRef = useRef(closeTab)
+
+  tabsRef.current = tabs
+  closeTabRef.current = closeTab
 
   const callbacksRef = useRef({
     setOpenedKeepAliveMiniApps
@@ -62,10 +66,9 @@ export const useMiniAppPopup = () => {
         try {
           clearWebviewState(key)
 
-          const tabs = tabsService.getTabs()
-          const tabToClose = tabs.find((tab) => tab.path === `/app/mini-app/${key}`)
+          const tabToClose = tabsRef.current.find((tab) => tab.url === `/app/mini-app/${key}`)
           if (tabToClose) {
-            tabsService.closeTab(tabToClose.id)
+            closeTabRef.current(tabToClose.id)
           }
 
           if (callbacksRef.current && sharedCache) {
@@ -120,21 +123,6 @@ export const useMiniAppPopup = () => {
     })
   }, [maxKeepAliveMiniApps, createLRUCache])
 
-  const navigateToMiniAppTab = useCallback((appId: string) => {
-    const targetPath = `/app/mini-app/${appId}`
-
-    if (NavigationService.navigate) {
-      void NavigationService.navigate({ to: targetPath })
-      return
-    }
-
-    NavigationService.ready.onResolved(() => {
-      if (NavigationService.navigate) {
-        void NavigationService.navigate({ to: targetPath })
-      }
-    })
-  }, [])
-
   const activateMiniAppTab = useCallback(
     (app: MiniApp) => {
       if (sharedCache && !sharedCache.get(app.appId)) {
@@ -144,9 +132,13 @@ export const useMiniAppPopup = () => {
       setOpenedOneOffMiniApp(null)
       setCurrentMiniAppId(app.appId)
       setMiniAppShow(true)
-      navigateToMiniAppTab(app.appId)
+      openTab(`/app/mini-app/${app.appId}`, {
+        id: `miniapp:${app.appId}`,
+        title: app.name,
+        type: 'route'
+      })
     },
-    [navigateToMiniAppTab, setOpenedOneOffMiniApp, setCurrentMiniAppId, setMiniAppShow]
+    [openTab, setOpenedOneOffMiniApp, setCurrentMiniAppId, setMiniAppShow]
   )
 
   const openMiniApp = useCallback(
@@ -175,19 +167,17 @@ export const useMiniAppPopup = () => {
 
   const closeMiniApp = useCallback(
     (appid: string) => {
-      const tabs = tabsService.getTabs()
-      const miniAppTab = tabs.find((tab) => tab.path === `/app/mini-app/${appid}`)
+      const miniAppTab = tabs.find((tab) => tab.url === `/app/mini-app/${appid}`)
 
       if (miniAppTab) {
-        tabsService.closeTab(miniAppTab.id)
-        return
+        closeTab(miniAppTab.id)
       }
 
       if (openedKeepAliveMiniApps.some((item) => item.appId === appid) && sharedCache) {
         sharedCache.delete(appid)
       }
 
-      if (openedOneOffMiniApp?.appId === appid) {
+      if (!miniAppTab && openedOneOffMiniApp?.appId === appid) {
         setOpenedOneOffMiniApp(null)
       }
 
@@ -197,20 +187,22 @@ export const useMiniAppPopup = () => {
       }
     },
     [
+      closeTab,
       currentMiniAppId,
       openedKeepAliveMiniApps,
       openedOneOffMiniApp,
       setOpenedOneOffMiniApp,
       setCurrentMiniAppId,
-      setMiniAppShow
+      setMiniAppShow,
+      tabs
     ]
   )
 
   const closeAllMiniApps = useCallback(() => {
-    const miniAppTabs = tabsService.getTabs().filter((tab) => tab.path.startsWith('/app/mini-app/'))
+    const miniAppTabs = tabs.filter((tab) => tab.url.startsWith('/app/mini-app/'))
 
     for (const tab of miniAppTabs) {
-      tabsService.closeTab(tab.id)
+      closeTab(tab.id)
     }
 
     sharedCache = createLRUCache()
@@ -218,18 +210,21 @@ export const useMiniAppPopup = () => {
     setOpenedOneOffMiniApp(null)
     setCurrentMiniAppId('')
     setMiniAppShow(false)
-  }, [createLRUCache, setOpenedKeepAliveMiniApps, setOpenedOneOffMiniApp, setCurrentMiniAppId, setMiniAppShow])
+  }, [
+    closeTab,
+    createLRUCache,
+    setOpenedKeepAliveMiniApps,
+    setOpenedOneOffMiniApp,
+    setCurrentMiniAppId,
+    setMiniAppShow,
+    tabs
+  ])
 
   const hideMiniAppPopup = useCallback(() => {
-    if (!miniAppShow) return
-
     if (openedOneOffMiniApp) {
       setOpenedOneOffMiniApp(null)
     }
-
-    setCurrentMiniAppId('')
-    setMiniAppShow(false)
-  }, [miniAppShow, openedOneOffMiniApp, setOpenedOneOffMiniApp, setCurrentMiniAppId, setMiniAppShow])
+  }, [openedOneOffMiniApp, setOpenedOneOffMiniApp])
 
   const openSmartMiniApp = useCallback(
     (config: MiniAppInput, _keepAlive: boolean = false) => {

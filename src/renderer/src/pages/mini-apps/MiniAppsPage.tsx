@@ -1,107 +1,164 @@
-import { Button, Input, Scrollbar } from '@cherrystudio/ui'
+import { Input } from '@cherrystudio/ui'
 import { Navbar, NavbarMain } from '@renderer/components/app/Navbar'
 import MiniApp from '@renderer/components/MiniApp/MiniApp'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { useNavbarPosition } from '@renderer/hooks/useNavbar'
 import { cn } from '@renderer/utils'
-import { Search, Settings2 } from 'lucide-react'
+import { Plus, Puzzle, Search, Settings2, X } from 'lucide-react'
 import type { FC } from 'react'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import MiniAppSettingsPopup from './MiniAppSettings/MiniAppSettingsPopup'
-import NewAppButton from './NewAppButton'
+import MiniAppSettings from './MiniAppSettings/MiniAppSettings'
+import NewAppButton, { MiniAppCreatePanel } from './NewAppButton'
 import { filterMiniAppsByQuery } from './utils'
 
 const MiniAppsToolbar = ({
   search,
   onSearchChange,
   onOpenSettings,
+  onOpenCreate,
   className,
   controlClassName
 }: {
   search: string
   onSearchChange: (value: string) => void
   onOpenSettings: () => void
+  onOpenCreate: () => void
   className?: string
   controlClassName?: string
 }) => {
   const { t } = useTranslation()
 
   return (
-    <div className={cn('flex w-full items-center gap-3', className)}>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold tracking-tight text-[var(--color-text-1)]">
-          {t('miniapp.title')}
+    <div className={cn('flex flex-col gap-3', className)}>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-1.5 text-xs">
+          <Puzzle className="size-[13px] text-[var(--color-text-3)]" />
+          <span className="text-[13px] text-[var(--color-text-1)]">{t('miniapp.title')}</span>
         </div>
-      </div>
-      <div className="flex w-full max-w-md items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--color-text-3)]" />
-          <Input
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={t('common.search')}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
             className={cn(
-              'h-10 rounded-full border-transparent bg-[var(--color-background-soft)] pr-3 pl-9 text-sm shadow-none focus-visible:border-[var(--color-border)] focus-visible:ring-0',
+              'flex size-7 items-center justify-center rounded-md text-[var(--color-text-3)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]',
               controlClassName
             )}
-          />
+            onClick={onOpenCreate}
+            aria-label={t('settings.miniapps.custom.title')}>
+            <Plus className="size-[14px]" />
+          </button>
+          <button
+            type="button"
+            className={cn(
+              'flex size-7 items-center justify-center rounded-md text-[var(--color-text-3)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]',
+              controlClassName
+            )}
+            onClick={onOpenSettings}
+            aria-label={t('settings.miniapps.display_title')}>
+            <Settings2 className="size-[14px]" />
+          </button>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
+      </div>
+
+      <div className="relative mx-auto w-full max-w-md">
+        <Search className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-3 size-[13px] text-[var(--color-text-3)]/40" />
+        <Input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={t('common.search')}
           className={cn(
-            'h-10 w-10 shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-text-2)] hover:bg-[var(--color-accent)] hover:text-[var(--color-text-1)]',
+            'h-8 rounded-lg border-[var(--color-border)]/50 bg-[var(--color-background)]/40 pr-8 pl-8 text-xs shadow-none placeholder:text-[var(--color-text-3)]/30 focus-visible:border-[var(--color-border)]/70 focus-visible:ring-0',
             controlClassName
           )}
-          onClick={onOpenSettings}
-          aria-label={t('settings.miniapps.display_title')}>
-          <Settings2 className="size-4" />
-        </Button>
+        />
+        {search && (
+          <button
+            type="button"
+            className="-translate-y-1/2 absolute top-1/2 right-2 text-[var(--color-text-3)]/50 transition hover:text-[var(--color-text-1)]"
+            onClick={() => onSearchChange('')}
+            aria-label={t('common.clear')}>
+            <X className="size-3" />
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
 const MiniAppsPage: FC = () => {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
+  const [showCreateDrawer, setShowCreateDrawer] = useState(false)
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
   const deferredSearch = useDeferredValue(search)
   const { miniapps } = useMiniApps()
   const { isTopNavbar } = useNavbarPosition()
 
   const filteredApps = useMemo(() => filterMiniAppsByQuery(miniapps, deferredSearch), [deferredSearch, miniapps])
 
+  const openCreateDrawer = () => {
+    setShowSettingsDrawer(false)
+    setShowCreateDrawer(true)
+  }
+
+  const openSettingsDrawer = () => {
+    setShowCreateDrawer(false)
+    setShowSettingsDrawer(true)
+  }
+
+  const closePanels = () => {
+    setShowCreateDrawer(false)
+    setShowSettingsDrawer(false)
+  }
+
   const toolbar = (
     <MiniAppsToolbar
       search={search}
       onSearchChange={setSearch}
-      onOpenSettings={MiniAppSettingsPopup.show}
+      onOpenSettings={openSettingsDrawer}
+      onOpenCreate={openCreateDrawer}
       controlClassName={isTopNavbar ? undefined : 'nodrag'}
     />
   )
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-[var(--color-background)]">
+    <div className="relative flex h-full flex-1 flex-col overflow-hidden bg-background">
       <Navbar>
         <NavbarMain>{toolbar}</NavbarMain>
       </Navbar>
 
-      <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 md:px-6">
-        {isTopNavbar && <div className="py-3">{toolbar}</div>}
+      <div className="flex min-h-0 flex-1 flex-col px-6 py-2">
+        {isTopNavbar && <div className="pb-3">{toolbar}</div>}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-card)_0%,var(--color-background)_100%)] shadow-[0_24px_60px_-36px_rgba(0,0,0,0.45)]">
-          <Scrollbar className="min-h-0 flex-1 px-4 py-5 md:px-6 md:py-6">
-            <div className="mx-auto grid max-w-[1120px] grid-cols-[repeat(auto-fill,minmax(104px,1fr))] justify-items-center gap-x-3 gap-y-6 md:gap-x-5 md:gap-y-8">
+        <div className="flex min-h-0 flex-1 overflow-y-auto px-1 py-2 [&::-webkit-scrollbar]:hidden">
+          <div className="mx-auto flex w-full max-w-5xl flex-col">
+            <div className="grid grid-cols-4 gap-x-2 gap-y-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8">
               {filteredApps.map((app) => (
                 <MiniApp key={app.appId} app={app} />
               ))}
-              <NewAppButton />
+              <NewAppButton compact onClick={openCreateDrawer} />
             </div>
-          </Scrollbar>
+          </div>
         </div>
       </div>
+
+      {(showCreateDrawer || showSettingsDrawer) && (
+        <button
+          type="button"
+          aria-label={t('common.close')}
+          className="absolute inset-0 z-40 bg-black/20"
+          onClick={closePanels}
+        />
+      )}
+
+      {showCreateDrawer && <MiniAppCreatePanel onClose={() => setShowCreateDrawer(false)} />}
+
+      {showSettingsDrawer && (
+        <section className="absolute top-2 right-2 bottom-2 z-50 flex w-[400px] flex-col overflow-hidden rounded-[8px] border border-border/30 bg-card shadow-2xl">
+          <MiniAppSettings onClose={() => setShowSettingsDrawer(false)} />
+        </section>
+      )}
     </div>
   )
 }
