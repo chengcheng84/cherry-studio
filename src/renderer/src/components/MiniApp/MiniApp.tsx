@@ -6,7 +6,7 @@ import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { useNavbarPosition } from '@renderer/hooks/useNavbar'
 import { cn } from '@renderer/utils'
-import type { MiniApp } from '@shared/data/types/miniapp'
+import type { MiniApp } from '@shared/data/types/miniApp'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -82,7 +82,7 @@ const MiniApp: FC<Props> = ({ app, onClick, size = 60, isLast }) => {
           }
         ]
       : []),
-    ...(app.type === 'custom'
+    ...(app.kind === 'custom'
       ? [
           {
             key: 'removeCustom',

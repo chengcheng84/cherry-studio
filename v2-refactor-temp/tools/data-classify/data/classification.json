@@ -1,10 +1,10 @@
 {
   "metadata": {
     "version": "2.0.0",
-    "lastUpdated": "2026-04-07T11:48:08.913Z",
-    "totalItems": 407,
-    "classified": 300,
-    "pending": 101,
+    "lastUpdated": "2026-04-16T11:08:56.000Z",
+    "totalItems": 408,
+    "classified": 299,
+    "pending": 100,
     "deleted": 0
   },
   "classifications": {
@@ -152,8 +152,8 @@
           "originalKey": "defaultModel",
           "type": "unknown",
           "defaultValue": "SYSTEM_MODELS.defaultModel[0]",
-          "status": "pending",
-          "category": null,
+          "status": "classified",
+          "category": "preferences",
           "targetKey": null,
           "children": [
             {
@@ -162,13 +162,14 @@
               "originalKey": "id",
               "status": "pending",
               "targetKey": null,
-              "type": "string"
+              "type": "string",
+              "note": "Migrated via complex mapping: llm_model_ids_to_unique"
             },
             {
               "category": null,
               "defaultValue": "GPT-3.5 Turbo",
               "originalKey": "name",
-              "status": "pending",
+              "status": "deleted",
               "targetKey": null,
               "type": "string"
             }
@@ -178,8 +179,8 @@
           "originalKey": "topicNamingModel",
           "type": "unknown",
           "defaultValue": "SYSTEM_MODELS.defaultModel[1]",
-          "status": "pending",
-          "category": null,
+          "status": "classified",
+          "category": "preferences",
           "targetKey": null,
           "children": [
             {
@@ -188,13 +189,14 @@
               "originalKey": "id",
               "status": "pending",
               "targetKey": null,
-              "type": "string"
+              "type": "string",
+              "note": "Migrated via complex mapping: llm_model_ids_to_unique"
             },
             {
               "category": null,
               "defaultValue": "GPT-4",
               "originalKey": "name",
-              "status": "pending",
+              "status": "deleted",
               "targetKey": null,
               "type": "string"
             }
@@ -204,8 +206,8 @@
           "originalKey": "quickModel",
           "type": "unknown",
           "defaultValue": "SYSTEM_MODELS.defaultModel[1]",
-          "status": "pending",
-          "category": null,
+          "status": "classified",
+          "category": "preferences",
           "targetKey": null,
           "children": [
             {
@@ -214,13 +216,14 @@
               "originalKey": "id",
               "status": "pending",
               "targetKey": null,
-              "type": "string"
+              "type": "string",
+              "note": "Migrated via complex mapping: llm_model_ids_to_unique"
             },
             {
               "category": null,
               "defaultValue": "GPT-4",
               "originalKey": "name",
-              "status": "pending",
+              "status": "deleted",
               "targetKey": null,
               "type": "string"
             }
@@ -230,17 +233,28 @@
           "originalKey": "translateModel",
           "type": "unknown",
           "defaultValue": "SYSTEM_MODELS.defaultModel[2]",
-          "status": "pending",
-          "category": null,
-          "targetKey": null
+          "status": "classified",
+          "category": "preferences",
+          "targetKey": null,
+          "children": [
+            {
+              "category": null,
+              "defaultValue": null,
+              "originalKey": "id",
+              "status": "pending",
+              "targetKey": null,
+              "type": "string",
+              "note": "Migrated via complex mapping: llm_model_ids_to_unique"
+            }
+          ]
         },
         {
           "originalKey": "quickAssistantId",
           "type": "string",
           "defaultValue": "",
-          "status": "pending",
-          "category": null,
-          "targetKey": null
+          "status": "classified",
+          "category": "preferences",
+          "targetKey": "feature.quick_assistant.assistant_id"
         },
         {
           "originalKey": "settings",
@@ -447,7 +461,7 @@
         {
           "originalKey": "enabled",
           "type": "string",
-          "defaultValue": "DEFAULT_MIN_APPS",
+          "defaultValue": "DEFAULT_MINI_APPS",
           "status": "pending",
           "category": null,
           "targetKey": null
@@ -1574,7 +1588,7 @@
                 "store",
                 "paintings",
                 "translate",
-                "miniapp",
+                "mini_app",
                 "knowledge",
                 "files",
                 "code_tools",
@@ -1604,7 +1618,7 @@
             "store",
             "paintings",
             "translate",
-            "miniapp",
+            "mini_app",
             "knowledge",
             "files",
             "code_tools",
@@ -1868,7 +1882,7 @@
           "defaultValue": 3,
           "status": "classified",
           "category": "preferences",
-          "targetKey": "feature.miniapp.max_keep_alive"
+          "targetKey": "feature.mini_app.max_keep_alive"
         },
         {
           "originalKey": "showOpenedMinappsInSidebar",
@@ -1876,7 +1890,7 @@
           "defaultValue": true,
           "status": "classified",
           "category": "preferences",
-          "targetKey": "feature.miniapp.show_opened_in_sidebar"
+          "targetKey": "feature.mini_app.show_opened_in_sidebar"
         },
         {
           "originalKey": "minappsOpenLinkExternal",
@@ -1884,7 +1898,7 @@
           "defaultValue": false,
           "status": "classified",
           "category": "preferences",
-          "targetKey": "feature.miniapp.open_link_external"
+          "targetKey": "feature.mini_app.open_link_external"
         },
         {
           "originalKey": "minAppRegion",
@@ -1892,7 +1906,7 @@
           "defaultValue": "auto",
           "status": "classified",
           "category": "preferences",
-          "targetKey": "feature.miniapp.region"
+          "targetKey": "feature.mini_app.region"
         },
         {
           "originalKey": "enableDataCollection",

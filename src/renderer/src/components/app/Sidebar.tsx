@@ -41,7 +41,7 @@ const routePrefixMap: Record<SidebarIconType, string> = {
   store: '/app/assistant',
   paintings: '/app/paintings',
   translate: '/app/translate',
-  miniapp: '/app/miniapp',
+  mini_app: '/app/mini-app',
   knowledge: '/app/knowledge',
   files: '/app/files',
   code_tools: '/app/code',
@@ -55,7 +55,7 @@ const iconMap: Record<SidebarIconType, SidebarMenuItem['icon']> = {
   store: Sparkle,
   paintings: Palette,
   translate: Languages,
-  miniapp: LayoutGrid,
+  mini_app: LayoutGrid,
   knowledge: FileSearch,
   files: Folder,
   code_tools: Code,
@@ -81,21 +81,18 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
   const { t } = useTranslation()
   const [userName] = usePreference('app.user.name')
   const [visibleSidebarIcons] = usePreference('ui.sidebar.icons.visible')
-  const [showOpenedInSidebar] = usePreference('feature.miniapp.show_opened_in_sidebar')
+  const [showOpenedInSidebar] = usePreference('feature.mini_app.show_opened_in_sidebar')
   const { activeTab, updateTab, openTab } = useTabs()
   const { defaultPaintingProvider } = useSettings()
 
-  // Sidebar width — persisted across restarts
   const [persistedWidth, setPersistedWidth] = usePersistCache('ui.sidebar.width')
   const [sidebarWidth, setSidebarWidth] = useState(persistedWidth)
 
-  // Sync local width to CSS variable and persist cache
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-width', `${sidebarWidth}px`)
     setPersistedWidth(sidebarWidth)
   }, [sidebarWidth, setPersistedWidth])
 
-  // User avatar
   const avatar = useAvatar()
   const sidebarUser = useMemo<SidebarUser>(
     () => ({
@@ -106,7 +103,6 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
     [avatar, t, userName]
   )
 
-  // MiniApp tabs — bridge v1 popup system data to v2 sidebar UI
   const { openedKeepAliveMiniApps, currentMiniAppId, miniAppShow } = useMiniApps()
   const { openMiniAppKeepAlive } = useMiniAppPopup()
 
@@ -135,11 +131,8 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
     [openedKeepAliveMiniApps, openMiniAppKeepAlive]
   )
 
-  // Floating sidebar (hover reveal when hidden)
   const [hoverVisible, setHoverVisible] = useState(false)
   const layout = getSidebarLayout(sidebarWidth)
-
-  // Menu items
   const pathname = activeTab?.url || '/'
 
   const items = useMemo<SidebarMenuItem[]>(
@@ -155,7 +148,7 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
             id: icon,
             label: getSidebarIconLabel(icon),
             icon: Icon,
-            ...(icon === 'miniapp' ? { miniAppTabs: activeMiniAppTabs } : {})
+            ...(icon === 'mini_app' ? { miniAppTabs: activeMiniAppTabs } : {})
           }
         ]
       }),
@@ -190,7 +183,6 @@ export default function Sidebar({ ref }: { ref?: Ref<HTMLDivElement | null> }) {
     [activeTab, updateTab, openTab, defaultPaintingProvider]
   )
 
-  // Common props shared between normal and floating sidebar
   const sidebarProps = {
     activeItem,
     items,

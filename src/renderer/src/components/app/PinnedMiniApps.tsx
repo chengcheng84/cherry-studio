@@ -5,7 +5,7 @@ import { useTheme } from '@renderer/context/ThemeProvider'
 import { useMiniAppPopup } from '@renderer/hooks/useMiniAppPopup'
 import { useMiniApps } from '@renderer/hooks/useMiniApps'
 import { useNavbarPosition } from '@renderer/hooks/useNavbar'
-import type { MiniApp } from '@shared/data/types/miniapp'
+import type { MiniApp } from '@shared/data/types/miniApp'
 import type { FC } from 'react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +18,7 @@ import MiniAppIcon from '../Icons/MiniAppIcon'
 export const SidebarOpenedMiniAppTabs: FC = () => {
   const { miniAppShow, openedKeepAliveMiniApps, currentMiniAppId } = useMiniApps()
   const { openMiniAppKeepAlive, closeMiniApp, closeAllMiniApps } = useMiniAppPopup()
-  const [showOpenedMiniAppsInSidebar] = usePreference('feature.miniapp.show_opened_in_sidebar')
+  const [showOpenedMiniAppsInSidebar] = usePreference('feature.mini_app.show_opened_in_sidebar')
   const { theme } = useTheme()
   const { t } = useTranslation()
   const { isLeftNavbar } = useNavbarPosition()
@@ -27,18 +27,16 @@ export const SidebarOpenedMiniAppTabs: FC = () => {
     openMiniAppKeepAlive(app)
   }
 
-  // animation for miniapp switch indicator
   useEffect(() => {
-    //hacky way to get the height of the icon
     const iconDefaultHeight = 40
     const iconDefaultOffset = 17
     const container = document.querySelector('.TabsContainer') as HTMLElement
     const activeIcon = document.querySelector('.TabsContainer .opened-active') as HTMLElement
 
-    let indicatorTop = 0,
-      indicatorRight = 0
+    let indicatorTop = 0
+    let indicatorRight = 0
     if (miniAppShow && activeIcon && container) {
-      indicatorTop = activeIcon.offsetTop + activeIcon.offsetHeight / 2 - 4 // 4 is half of the indicator's height (8px)
+      indicatorTop = activeIcon.offsetTop + activeIcon.offsetHeight / 2 - 4
       indicatorRight = 0
     } else {
       indicatorTop =
@@ -51,10 +49,8 @@ export const SidebarOpenedMiniAppTabs: FC = () => {
     container.style.setProperty('--indicator-right', `${indicatorRight}px`)
   }, [currentMiniAppId, openedKeepAliveMiniApps, miniAppShow])
 
-  // Check whether to show the opened-miniapps component
   const isShowOpened = showOpenedMiniAppsInSidebar && openedKeepAliveMiniApps.length > 0
 
-  // If not needed, return an empty container to preserve animation but show no content
   if (!isShowOpened) return <TabsContainer className="TabsContainer" />
 
   return (
