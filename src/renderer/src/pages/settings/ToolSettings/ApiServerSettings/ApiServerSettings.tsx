@@ -1,16 +1,11 @@
-// TODO: Refactor this component to use HeroUI
-import { Button, Tooltip } from '@cherrystudio/ui'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useApiServer } from '@renderer/hooks/useApiServer'
-import type { RootState } from '@renderer/store'
-import { useAppDispatch } from '@renderer/store'
-import { setApiServerApiKey, setApiServerPort } from '@renderer/store/settings'
 import { formatErrorMessage } from '@renderer/utils/error'
-import { Input, InputNumber, Typography } from 'antd'
+import { API_SERVER_DEFAULTS } from '@shared/config/constant'
+import { Alert, Button, Input, InputNumber, Tooltip, Typography } from 'antd'
 import { Copy, ExternalLink, Play, RotateCcw, Square } from 'lucide-react'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -20,13 +15,19 @@ const { Text, Title } = Typography
 
 const ApiServerSettings: FC = () => {
   const { theme } = useTheme()
-  const dispatch = useAppDispatch()
   const { t } = useTranslation()
 
-  // API Server state with proper defaults
-  const apiServerConfig = useSelector((state: RootState) => state.settings.apiServer)
-  const { apiServerRunning, apiServerLoading, startApiServer, stopApiServer, restartApiServer, setApiServerEnabled } =
-    useApiServer()
+  // API Server state from useApiServer hook
+  const {
+    apiServerConfig,
+    apiServerRunning,
+    apiServerLoading,
+    startApiServer,
+    stopApiServer,
+    restartApiServer,
+    setApiServerEnabled,
+    setApiServerConfig
+  } = useApiServer()
 
   const handleApiServerToggle = async (enabled: boolean) => {
     try {
@@ -47,26 +48,33 @@ const ApiServerSettings: FC = () => {
   }
 
   const copyApiKey = () => {
-    navigator.clipboard.writeText(apiServerConfig.apiKey)
+    if (apiServerConfig.apiKey) {
+      void navigator.clipboard.writeText(apiServerConfig.apiKey)
+    }
     window.toast.success(t('apiServer.messages.apiKeyCopied'))
   }
 
+  const generateApiKey = () => {
+    return `cs-sk-${uuidv4()}`
+  }
+
   const regenerateApiKey = () => {
-    const newApiKey = `cs-sk-${uuidv4()}`
-    dispatch(setApiServerApiKey(newApiKey))
+    void setApiServerConfig({ apiKey: generateApiKey() })
     window.toast.success(t('apiServer.messages.apiKeyRegenerated'))
   }
 
   const handlePortChange = (value: string) => {
-    const port = parseInt(value) || 23333
+    const port = parseInt(value) || API_SERVER_DEFAULTS.PORT
     if (port >= 1000 && port <= 65535) {
-      dispatch(setApiServerPort(port))
+      void setApiServerConfig({ port })
     }
   }
 
   const openApiDocs = () => {
     if (apiServerRunning) {
-      window.open(`http://localhost:${apiServerConfig.port}/api-docs`, '_blank')
+      const host = apiServerConfig.host || API_SERVER_DEFAULTS.HOST
+      const port = apiServerConfig.port || API_SERVER_DEFAULTS.PORT
+      window.open(`http://${host}:${port}/api-docs`, '_blank')
     }
   }
 
@@ -81,12 +89,15 @@ const ApiServerSettings: FC = () => {
           <Text type="secondary">{t('apiServer.description')}</Text>
         </HeaderContent>
         {apiServerRunning && (
-          <Button onClick={openApiDocs}>
-            <ExternalLink size={14} />
+          <Button type="primary" icon={<ExternalLink size={14} />} onClick={openApiDocs}>
             {t('apiServer.documentation.title')}
           </Button>
         )}
       </HeaderSection>
+
+      {!apiServerRunning && (
+        <Alert type="warning" message={t('agent.warning.enable_server')} style={{ marginBottom: 10 }} showIcon />
+      )}
 
       {/* Server Control Panel with integrated configuration */}
       <ServerControlPanel $status={apiServerRunning}>
@@ -97,14 +108,16 @@ const ApiServerSettings: FC = () => {
               {apiServerRunning ? t('apiServer.status.running') : t('apiServer.status.stopped')}
             </StatusText>
             <StatusSubtext>
-              {apiServerRunning ? `http://localhost:${apiServerConfig.port}` : t('apiServer.fields.port.description')}
+              {apiServerRunning
+                ? `http://${apiServerConfig.host || API_SERVER_DEFAULTS.HOST}:${apiServerConfig.port || API_SERVER_DEFAULTS.PORT}`
+                : t('apiServer.fields.port.description')}
             </StatusSubtext>
           </StatusContent>
         </StatusSection>
 
         <ControlSection>
           {apiServerRunning && (
-            <Tooltip content={t('apiServer.actions.restart.tooltip')}>
+            <Tooltip title={t('apiServer.actions.restart.tooltip')}>
               <RestartButton
                 $loading={apiServerLoading}
                 onClick={apiServerLoading ? undefined : handleApiServerRestart}>
@@ -118,16 +131,16 @@ const ApiServerSettings: FC = () => {
           {!apiServerRunning && (
             <StyledInputNumber
               value={apiServerConfig.port}
-              onChange={(value) => handlePortChange(String(value || 23333))}
+              onChange={(value) => handlePortChange(String(value || API_SERVER_DEFAULTS.PORT))}
               min={1000}
               max={65535}
               disabled={apiServerRunning}
-              placeholder="23333"
+              placeholder={String(API_SERVER_DEFAULTS.PORT)}
               size="middle"
             />
           )}
 
-          <Tooltip content={apiServerRunning ? t('apiServer.actions.stop') : t('apiServer.actions.start')}>
+          <Tooltip title={apiServerRunning ? t('apiServer.actions.stop') : t('apiServer.actions.start')}>
             {apiServerRunning ? (
               <StopButton
                 $loading={apiServerLoading}
@@ -151,21 +164,19 @@ const ApiServerSettings: FC = () => {
         <FieldDescription>{t('apiServer.fields.apiKey.description')}</FieldDescription>
 
         <StyledInput
-          value={apiServerConfig.apiKey}
+          value={apiServerConfig.apiKey || ''}
           readOnly
           placeholder={t('apiServer.fields.apiKey.placeholder')}
           size="middle"
           suffix={
             <InputButtonContainer>
               {!apiServerRunning && (
-                <Button onClick={regenerateApiKey} disabled={apiServerRunning} variant="ghost">
+                <RegenerateButton onClick={regenerateApiKey} disabled={apiServerRunning} type="link">
                   {t('apiServer.actions.regenerate')}
-                </Button>
+                </RegenerateButton>
               )}
-              <Tooltip content={t('apiServer.fields.apiKey.copyTooltip')}>
-                <Button variant="ghost" size="icon" onClick={copyApiKey} disabled={!apiServerConfig.apiKey}>
-                  <Copy size={14} />
-                </Button>
+              <Tooltip title={t('apiServer.fields.apiKey.copyTooltip')}>
+                <InputButton icon={<Copy size={14} />} onClick={copyApiKey} disabled={!apiServerConfig.apiKey} />
               </Tooltip>
             </InputButtonContainer>
           }
@@ -359,6 +370,21 @@ const InputButtonContainer = styled.div`
   display: flex;
   align-items: center;
   gap: 4px;
+`
+
+const InputButton = styled(Button)`
+  border: none;
+  padding: 0 4px;
+  background: transparent;
+`
+
+const RegenerateButton = styled(Button)`
+  padding: 0 4px;
+  font-size: 12px;
+  height: auto;
+  line-height: 1;
+  border: none;
+  background: transparent;
 `
 
 const AuthHeaderSection = styled.div`

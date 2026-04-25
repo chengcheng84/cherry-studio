@@ -2,6 +2,7 @@ import type { BaseEmbeddings } from '@cherrystudio/embedjs-interfaces'
 import { OllamaEmbeddings } from '@cherrystudio/embedjs-ollama'
 import { OpenAiEmbeddings } from '@cherrystudio/embedjs-openai'
 import type { ApiClient } from '@types'
+import { net } from 'electron'
 
 import { VoyageEmbeddings } from './VoyageEmbeddings'
 
@@ -18,19 +19,9 @@ export default class EmbeddingsFactory {
       })
     }
     if (provider === 'ollama') {
-      if (baseURL.includes('v1/')) {
-        return new OllamaEmbeddings({
-          model: model,
-          baseUrl: baseURL.replace('v1/', ''),
-          requestOptions: {
-            // @ts-ignore expected
-            'encoding-format': 'float'
-          }
-        })
-      }
       return new OllamaEmbeddings({
         model: model,
-        baseUrl: baseURL,
+        baseUrl: baseURL.replace(/\/api$/, ''),
         requestOptions: {
           // @ts-ignore expected
           'encoding-format': 'float'
@@ -43,7 +34,7 @@ export default class EmbeddingsFactory {
       apiKey,
       dimensions,
       batchSize,
-      configuration: { baseURL }
+      configuration: { baseURL, fetch: net.fetch as typeof fetch }
     })
   }
 }

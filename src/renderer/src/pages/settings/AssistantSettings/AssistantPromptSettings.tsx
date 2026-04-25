@@ -1,11 +1,18 @@
 import 'emoji-picker-element'
 
 import CloseCircleFilled from '@ant-design/icons/lib/icons/CloseCircleFilled'
-import { Box, RowFlex, SpaceBetweenRowFlex } from '@cherrystudio/ui'
-import { CodeEditor } from '@cherrystudio/ui'
-import { Button } from '@cherrystudio/ui'
+import {
+  Box,
+  Button,
+  CodeEditor,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  RowFlex,
+  SpaceBetweenRowFlex,
+  Tooltip
+} from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
-import { Popover, PopoverContent, PopoverTrigger, Tooltip } from '@heroui/react'
 import EmojiPicker from '@renderer/components/EmojiPicker'
 import type { RichEditorRef } from '@renderer/components/RichEditor/types'
 import { useCodeStyle } from '@renderer/context/CodeStyleProvider'
@@ -41,11 +48,7 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
   const editorRef = useRef<RichEditorRef>(null)
 
   useEffect(() => {
-    const updateTokenCount = async () => {
-      const count = await estimateTextTokens(prompt)
-      setTokenCount(count)
-    }
-    updateTokenCount()
+    setTokenCount(estimateTextTokens(prompt))
   }, [prompt])
 
   const processedPrompt = usePromptProcessor({

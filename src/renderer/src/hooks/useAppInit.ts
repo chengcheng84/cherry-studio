@@ -6,12 +6,10 @@ import { isLocalAi } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import db from '@renderer/databases'
 import { useAppUpdateHandler, useAppUpdateState } from '@renderer/hooks/useAppUpdate'
-import i18n from '@renderer/i18n'
-import KnowledgeQueue from '@renderer/queue/KnowledgeQueue'
-import MemoryService from '@renderer/services/MemoryService'
-import { useAppDispatch } from '@renderer/store'
-import { useAppSelector } from '@renderer/store'
-import { handleSaveData } from '@renderer/store'
+import i18n, { setDayjsLocale } from '@renderer/i18n'
+import { knowledgeQueue } from '@renderer/queue/KnowledgeQueue'
+import { memoryService } from '@renderer/services/MemoryService'
+import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectMemoryConfig } from '@renderer/store/memory'
 import {
   type ToolPermissionRequestPayload,
@@ -20,6 +18,7 @@ import {
 } from '@renderer/store/toolPermissions'
 import { delay, runAsyncFunction } from '@renderer/utils'
 import { checkDataLimit } from '@renderer/utils'
+import { sendToolApprovalNotification } from '@renderer/utils/userConfirmation'
 import { defaultLanguage } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -38,10 +37,7 @@ export function useAppInit() {
   const [language] = usePreference('app.language')
   const [windowStyle] = usePreference('ui.window_style')
   const [customCss] = usePreference('ui.custom_css')
-  const [proxyUrl] = usePreference('app.proxy.url')
-  const [proxyBypassRules] = usePreference('app.proxy.bypass_rules')
   const [autoCheckUpdate] = usePreference('app.dist.auto_update.enabled')
-  const [proxyMode] = usePreference('app.proxy.mode')
   const [enableDataCollection] = usePreference('app.privacy.data_collection.enabled')
 
   const { isLeftNavbar } = useNavbarPosition()
@@ -57,55 +53,63 @@ export function useAppInit() {
     // eslint-disable-next-line no-restricted-syntax
     console.timeEnd('init')
 
-    // Initialize MemoryService after app is ready
-    MemoryService.getInstance()
+    // MemoryService is initialized at module level via export const
   }, [])
 
   useEffect(() => {
-    window.api.getDataPathFromArgs().then((dataPath) => {
+    void window.api.getDataPathFromArgs().then((dataPath) => {
       if (dataPath) {
-        window.navigate('/settings/data', { replace: true })
+        void window.navigate({ to: '/settings/data', replace: true })
       }
     })
   }, [])
 
-  useEffect(() => {
-    window.electron.ipcRenderer.on(IpcChannel.App_SaveData, async () => {
-      await handleSaveData()
-    })
-  }, [])
+  // [v2] Removed: Redux persistor flush is no longer needed after v2 data refactoring
+  // useEffect(() => {
+  //   window.electron.ipcRenderer.on(IpcChannel.App_SaveData, async () => {
+  //     await handleSaveData()
+  //   })
+  // }, [])
 
   useAppUpdateHandler()
   useFullScreenNotice()
 
   useEffect(() => {
-    savedAvatar?.value && cacheService.set('avatar', savedAvatar.value)
-  }, [savedAvatar, dispatch])
+    savedAvatar?.value && cacheService.set('app.user.avatar', savedAvatar.value)
+  }, [savedAvatar])
 
   useEffect(() => {
-    runAsyncFunction(async () => {
+    const checkForUpdates = async () => {
+      const { isPackaged } = await window.api.getAppInfo()
+
+      if (!isPackaged || !autoCheckUpdate) {
+        return
+      }
+
+      const { updateInfo } = await window.api.checkForUpdate()
+      updateAppUpdateState({ info: updateInfo })
+    }
+
+    // Initial check with delay
+    void runAsyncFunction(async () => {
       const { isPackaged } = await window.api.getAppInfo()
       if (isPackaged && autoCheckUpdate) {
         await delay(2)
-        const { updateInfo } = await window.api.checkForUpdate()
-        updateAppUpdateState({ info: updateInfo })
+        await checkForUpdates()
       }
     })
+
+    // Set up 4-hour interval check
+    const FOUR_HOURS = 4 * 60 * 60 * 1000
+    const intervalId = setInterval(checkForUpdates, FOUR_HOURS)
+
+    return () => clearInterval(intervalId)
   }, [autoCheckUpdate, updateAppUpdateState])
 
   useEffect(() => {
-    if (proxyMode === 'system') {
-      window.api.setProxy('system', undefined)
-    } else if (proxyMode === 'custom') {
-      proxyUrl && window.api.setProxy(proxyUrl, proxyBypassRules)
-    } else {
-      // set proxy to none for direct mode
-      window.api.setProxy('', undefined)
-    }
-  }, [proxyUrl, proxyMode, proxyBypassRules])
-
-  useEffect(() => {
-    i18n.changeLanguage(language || navigator.language || defaultLanguage)
+    const currentLanguage = language || navigator.language || defaultLanguage
+    void i18n.changeLanguage(currentLanguage)
+    setDayjsLocale(currentLanguage)
   }, [language])
 
   useEffect(() => {
@@ -131,14 +135,14 @@ export function useAppInit() {
 
   useEffect(() => {
     // set files path
-    window.api.getAppInfo().then((info) => {
-      cacheService.set('filesPath', info.filesPath)
-      cacheService.set('resourcesPath', info.resourcesPath)
+    void window.api.getAppInfo().then((info) => {
+      cacheService.set('app.path.files', info.filesPath)
+      cacheService.set('app.path.resources', info.resourcesPath)
     })
-  }, [dispatch])
+  }, [])
 
   useEffect(() => {
-    KnowledgeQueue.checkAllBases()
+    void knowledgeQueue.checkAllBases()
   }, [])
 
   useEffect(() => {
@@ -158,14 +162,48 @@ export function useAppInit() {
   useEffect(() => {
     if (!window.electron?.ipcRenderer) return
 
-    const requestListener = (_event: Electron.IpcRendererEvent, payload: ToolPermissionRequestPayload) => {
+    const requestListener = async (_event: Electron.IpcRendererEvent, payload: ToolPermissionRequestPayload) => {
       logger.debug('Renderer received tool permission request', {
         requestId: payload.requestId,
         toolName: payload.toolName,
-        expiresAt: payload.expiresAt,
-        suggestionCount: payload.suggestions.length
+        suggestionCount: payload.suggestions.length,
+        autoApprove: payload.autoApprove
       })
+
+      if (payload.autoApprove) {
+        logger.debug('Auto-approving tool permission request', {
+          requestId: payload.requestId,
+          toolName: payload.toolName
+        })
+
+        try {
+          const response = await window.api.agentTools.respondToPermission({
+            requestId: payload.requestId,
+            behavior: 'allow',
+            updatedInput: payload.input,
+            updatedPermissions: payload.suggestions
+          })
+
+          if (!response?.success) {
+            throw new Error('Auto-approval response rejected by main process')
+          }
+
+          logger.debug('Auto-approval acknowledged by main process', {
+            requestId: payload.requestId,
+            toolName: payload.toolName
+          })
+        } catch (error) {
+          logger.error('Failed to send auto-approval response', error as Error)
+          // Fall through to add to store for manual approval
+          dispatch(toolPermissionsActions.requestReceived(payload))
+        }
+        return
+      }
+
       dispatch(toolPermissionsActions.requestReceived(payload))
+
+      // Send system notification for agent tool approval
+      sendToolApprovalNotification(payload.toolName)
     }
 
     const resultListener = (_event: Electron.IpcRendererEvent, payload: ToolPermissionResultPayload) => {
@@ -204,13 +242,12 @@ export function useAppInit() {
       }
     }
 
-    window.electron.ipcRenderer.on(IpcChannel.AgentToolPermission_Request, requestListener)
-    window.electron.ipcRenderer.on(IpcChannel.AgentToolPermission_Result, resultListener)
+    const removeListeners = [
+      window.electron.ipcRenderer.on(IpcChannel.AgentToolPermission_Request, requestListener),
+      window.electron.ipcRenderer.on(IpcChannel.AgentToolPermission_Result, resultListener)
+    ]
 
-    return () => {
-      window.electron?.ipcRenderer.removeListener(IpcChannel.AgentToolPermission_Request, requestListener)
-      window.electron?.ipcRenderer.removeListener(IpcChannel.AgentToolPermission_Result, resultListener)
-    }
+    return () => removeListeners.forEach((removeListener) => removeListener())
   }, [dispatch, t])
 
   useEffect(() => {
@@ -219,13 +256,10 @@ export function useAppInit() {
 
   // Update memory service configuration when it changes
   useEffect(() => {
-    const memoryService = MemoryService.getInstance()
-    memoryService.updateConfig().catch((error) => {
-      logger.error('Failed to update memory config:', error)
-    })
+    memoryService.updateConfig().catch((error) => logger.error('Failed to update memory config:', error))
   }, [memoryConfig])
 
   useEffect(() => {
-    checkDataLimit()
+    void checkDataLimit()
   }, [])
 }

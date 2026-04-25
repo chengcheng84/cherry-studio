@@ -10,22 +10,15 @@ const translations: Record<string, string> = {
   'common.close': 'Close',
   'common.error': 'Error',
   'common.no_results': 'No results',
-  'common.search': 'Search'
+  'common.search': 'Search',
+  'common.next_match': 'Next match',
+  'common.previous_match': 'Previous match'
 }
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => translations[key] ?? key
   })
-}))
-
-// mock @cherrystudio/ui Button component to handle onClick
-vi.mock('@cherrystudio/ui', () => ({
-  Button: ({ children, onClick, disabled, ...props }: any) => (
-    <button type="button" onClick={onClick} disabled={disabled} {...props}>
-      {children}
-    </button>
-  )
 }))
 
 const createWebviewMock = () => {
@@ -264,7 +257,7 @@ describe('WebviewSearch', () => {
     await user.type(input, 'Cherry')
 
     await waitFor(() => {
-      expect(findInPageMock).toHaveBeenCalledWith('Cherry', {})
+      expect(findInPageMock).toHaveBeenCalledWith('Cherry', undefined)
     })
 
     await act(async () => {
@@ -316,7 +309,7 @@ describe('WebviewSearch', () => {
     await user.type(input, 'Cherry')
 
     await waitFor(() => {
-      expect(findInPageMock).toHaveBeenCalledWith('Cherry', {})
+      expect(findInPageMock).toHaveBeenCalledWith('Cherry', undefined)
     })
     findInPageMock.mockClear()
 

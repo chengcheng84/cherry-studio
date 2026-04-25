@@ -1,5 +1,4 @@
 import { usePreference } from '@data/hooks/usePreference'
-import { cn } from '@heroui/react'
 import { loggerService } from '@logger'
 import HorizontalScrollContainer from '@renderer/components/HorizontalScrollContainer'
 import Scrollbar from '@renderer/components/Scrollbar'
@@ -15,7 +14,8 @@ import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
 import type { Assistant, Topic } from '@renderer/types'
 import type { Message, MessageBlock } from '@renderer/types/newMessage'
-import { classNames } from '@renderer/utils'
+import { classNames, cn } from '@renderer/utils'
+import { scrollIntoView } from '@renderer/utils/dom'
 import { isMessageProcessing } from '@renderer/utils/messageUtils/is'
 import { Divider } from 'antd'
 import type { Dispatch, FC, SetStateAction } from 'react'
@@ -85,9 +85,10 @@ const MessageItem: FC<Props> = ({
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
-      messageContainerRef.current.scrollIntoView({
+      scrollIntoView(messageContainerRef.current, {
         behavior: 'smooth',
-        block: 'center'
+        block: 'center',
+        container: 'nearest'
       })
     }
   }, [isEditing])
@@ -97,7 +98,7 @@ const MessageItem: FC<Props> = ({
       try {
         await editMessageBlocks(message.id, blocks)
         const usage = await estimateMessageUsage(message)
-        editMessage(message.id, { usage: usage })
+        void editMessage(message.id, { usage: usage })
         stopEditing()
       } catch (error) {
         logger.error('Failed to save message blocks:', error as Error)
@@ -130,7 +131,7 @@ const MessageItem: FC<Props> = ({
   const messageHighlightHandler = useCallback(
     (highlight: boolean = true) => {
       if (messageContainerRef.current) {
-        messageContainerRef.current.scrollIntoView({ behavior: 'smooth' })
+        scrollIntoView(messageContainerRef.current, { behavior: 'smooth', block: 'center', container: 'nearest' })
         if (highlight) {
           setTimeoutTimer(
             'messageHighlightHandler',
@@ -180,7 +181,7 @@ const MessageItem: FC<Props> = ({
           if (isMultiSelectMode) {
             return
           }
-          EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
+          void EventEmitter.emit(EVENT_NAMES.NEW_CONTEXT)
         }}>
         <Divider dashed style={{ padding: '0 20px' }} plain>
           {t('chat.message.new.context')}

@@ -1,15 +1,15 @@
 import { RowFlex } from '@cherrystudio/ui'
-import { Avatar, EmojiAvatar, Tooltip } from '@cherrystudio/ui'
+import { Avatar, AvatarFallback, AvatarImage, EmojiAvatar, Tooltip } from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
 import UserPopup from '@renderer/components/Popups/UserPopup'
 import { APP_NAME, AppLogo, isLocalAi } from '@renderer/config/env'
 import { getModelLogoById } from '@renderer/config/models'
 import { useTheme } from '@renderer/context/ThemeProvider'
+import { useCache } from '@renderer/data/hooks/useCache'
 import { useAgent } from '@renderer/hooks/agents/useAgent'
 import useAvatar from '@renderer/hooks/useAvatar'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
-import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useMessageStyle } from '@renderer/hooks/useSettings'
 import { useSidebarIconShow } from '@renderer/hooks/useSidebarIcon'
 import { getMessageModelId } from '@renderer/services/MessagesService'
@@ -25,6 +25,8 @@ import { memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import MessageTokens from './MessageTokens'
+
 interface Props {
   message: Message
   assistant: Assistant
@@ -33,8 +35,8 @@ interface Props {
   isGroupContextMessage?: boolean
 }
 
-const getAvatarSource = (isLocalAi: boolean, modelId: string | undefined) => {
-  if (isLocalAi) return AppLogo
+const getAvatarIcon = (isLocalAi: boolean, modelId: string | undefined) => {
+  if (isLocalAi) return undefined
   return modelId ? getModelLogoById(modelId) : undefined
 }
 
@@ -43,10 +45,9 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
   const { theme } = useTheme()
   const [userName] = usePreference('app.user.name')
   const showMinappIcon = useSidebarIconShow('minapp')
-  const { chat } = useRuntime()
-  const { activeTopicOrSession, activeAgentId } = chat
+  const [activeAgentId] = useCache('agent.active_id')
   const { agent } = useAgent(activeAgentId)
-  const isAgentView = activeTopicOrSession === 'session'
+  const isAgentView = window.location.hash.startsWith('#/agents')
   const { t } = useTranslation()
   const { isBubbleStyle } = useMessageStyle()
   const { openMinappById } = useMinappPopup()
@@ -55,7 +56,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
 
   const isSelected = selectedMessageIds?.includes(message.id)
 
-  const avatarSource = useMemo(() => getAvatarSource(isLocalAi, getMessageModelId(message)), [message])
+  const ModelIcon = useMemo(() => getAvatarIcon(isLocalAi, getMessageModelId(message)), [message])
 
   const getUserName = useCallback(() => {
     if (isLocalAi && message.role !== 'user') {
@@ -85,27 +86,35 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.provider, showMinappIcon])
 
-  const hideHeader = isBubbleStyle ? isUserMessage && !isMultiSelectMode : false
-
-  if (hideHeader) {
-    return null
-  }
+  const userNameJustifyContent = useMemo(() => {
+    if (!isBubbleStyle) return 'flex-start'
+    if (isUserMessage && !isMultiSelectMode) return 'flex-end'
+    return 'flex-start'
+  }, [isBubbleStyle, isUserMessage, isMultiSelectMode])
 
   return (
     <Container className="message-header">
       {isAssistantMessage ? (
-        <Avatar
-          src={avatarSource}
-          className="h-[35px] w-[35px]"
-          style={{
-            borderRadius: '25%',
-            cursor: showMinappIcon ? 'pointer' : 'default',
-            border: isLocalAi ? '1px solid var(--color-border-soft)' : 'none',
-            filter: theme === 'dark' ? 'invert(0.05)' : undefined
-          }}
-          onClick={showMiniApp}>
-          {avatarName}
-        </Avatar>
+        ModelIcon ? (
+          <div onClick={showMiniApp} className="cursor-pointer">
+            <ModelIcon.Avatar size={35} className="rounded-[25%]" />
+          </div>
+        ) : (
+          <Avatar
+            className="h-[35px] w-[35px] cursor-pointer rounded-[25%]"
+            style={{
+              cursor: showMinappIcon ? 'pointer' : 'default',
+              border: isLocalAi ? '1px solid var(--color-border-soft)' : 'none',
+              filter: theme === 'dark' ? 'invert(0.05)' : undefined
+            }}
+            onClick={showMiniApp}>
+            {isLocalAi ? (
+              <AvatarImage src={AppLogo} />
+            ) : (
+              <AvatarFallback className="rounded-[25%]">{avatarName}</AvatarFallback>
+            )}
+          </Avatar>
+        )
       ) : (
         <>
           {isEmoji(avatar) ? (
@@ -113,17 +122,14 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
               {avatar}
             </EmojiAvatar>
           ) : (
-            <Avatar
-              src={avatar}
-              className="h-[35px] w-[35px]"
-              style={{ borderRadius: '25%', cursor: 'pointer' }}
-              onClick={() => UserPopup.show()}
-            />
+            <Avatar className="h-[35px] w-[35px] cursor-pointer rounded-[25%]" onClick={() => UserPopup.show()}>
+              <AvatarImage src={avatar} />
+            </Avatar>
           )}
         </>
       )}
       <UserWrap>
-        <RowFlex className="items-center">
+        <RowFlex className="items-center" style={{ justifyContent: userNameJustifyContent }}>
           <UserName isBubbleStyle={isBubbleStyle} theme={theme}>
             {username}
           </UserName>
@@ -133,8 +139,14 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
             </Tooltip>
           )}
         </RowFlex>
-        <InfoWrap className="message-header-info-wrap">
+        <InfoWrap className="message-header-info-wrap text-(--color-text-3) text-[10px]">
           <MessageTime>{dayjs(message?.updatedAt ?? message.createdAt).format('MM/DD HH:mm')}</MessageTime>
+          {isBubbleStyle && message.usage !== undefined && (
+            <>
+              |
+              <MessageTokens message={message} />
+            </>
+          )}
         </InfoWrap>
       </UserWrap>
       {isMultiSelectMode && (

@@ -1,16 +1,16 @@
 import { PlusOutlined } from '@ant-design/icons'
 import { Button } from '@cherrystudio/ui'
-import { Avatar } from '@cherrystudio/ui'
+import { resolveProviderIcon } from '@cherrystudio/ui/icons'
 import { useCache } from '@data/hooks/useCache'
 import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
-import AiProvider from '@renderer/aiCore'
+import { AiProvider } from '@renderer/aiCore'
 import IcImageUp from '@renderer/assets/images/paintings/ic_ImageUp.svg'
 import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import TranslateButton from '@renderer/components/TranslateButton'
 import { isMac } from '@renderer/config/constant'
-import { getProviderLogo, isNewApiProvider, PROVIDER_URLS } from '@renderer/config/providers'
+import { PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { usePaintings } from '@renderer/hooks/usePaintings'
@@ -28,13 +28,16 @@ import { translateText } from '@renderer/services/TranslateService'
 import type { PaintingAction, PaintingsState } from '@renderer/types'
 import type { FileMetadata } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
+import { isNewApiProvider } from '@renderer/utils/provider'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { Empty, InputNumber, Segmented, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
+import type { RcFile } from 'antd/es/upload'
+import type { UploadFile } from 'antd/es/upload/interface'
 import type { FC } from 'react'
 import React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
 import SendMessageButton from '../home/Inputbar/SendMessageButton'
@@ -95,11 +98,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return editImageFiles
   }, [editImageFiles])
 
-  const updatePaintingState = (updates: Partial<PaintingAction>) => {
-    const updatedPainting = { ...painting, providerId: newApiProvider.id, ...updates }
-    setPainting(updatedPainting)
-    updatePainting(mode, updatedPainting)
-  }
+  const updatePaintingState = useCallback(
+    (updates: Partial<PaintingAction>) => {
+      const updatedPainting = { ...painting, providerId: newApiProvider.id, ...updates }
+      setPainting(updatedPainting)
+      updatePainting(mode, updatedPainting)
+    },
+    [painting, newApiProvider.id, mode, updatePainting]
+  )
 
   // ---------------- Model Related Configurations ----------------
   // const modelOptions = MODELS.map((m) => ({ label: m.name, value: m.name }))
@@ -252,8 +258,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${AI.getApiKey()}`
     }
-    const url = newApiProvider.apiHost + `/v1/images/generations`
-    const editUrl = newApiProvider.apiHost + `/v1/images/edits`
+    // NOTE: Cherry Studio当下 newapi只接受v1/images/xxx的请求
+    // TODO: support gemini https://www.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589
+    let url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/generations`
+    let editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/edits`
+    if (newApiProvider.id === 'aionly') {
+      url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
+      editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
+    }
 
     try {
       if (mode === 'openai_image_generate') {
@@ -312,7 +324,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error?.message || '生成图像失败')
+        throw new Error(errorData.error?.message || t('paintings.generate_failed'))
       }
 
       const data = await response.json()
@@ -332,7 +344,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
           })
         )
         await FileManager.addFiles(validFiles)
-        updatePaintingState({ files: validFiles, urls: validFiles.map((file) => file.name) })
+        updatePaintingState({ files: validFiles, urls: [] })
       }
     } catch (error: unknown) {
       handleError(error)
@@ -386,7 +398,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
     }
 
-    removePainting(mode, paintingToDelete)
+    void removePainting(mode, paintingToDelete)
   }
 
   const translate = async () => {
@@ -424,7 +436,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       if (spaceClickCount === 2) {
         setSpaceClickCount(0)
         setIsTranslating(true)
-        translate()
+        void translate()
       }
     }
   }
@@ -432,7 +444,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const handleProviderChange = (providerId: string) => {
     const routeName = location.pathname.split('/').pop()
     if (providerId !== routeName) {
-      navigate('../' + providerId, { replace: true })
+      void navigate({ to: '../' + providerId, replace: true })
     }
   }
 
@@ -459,7 +471,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   // 当 modelOptions 为空时，引导用户跳转到 Provider 设置页面，新增 image-generation 端点模型
   const handleShowAddModelPopup = () => {
-    navigate(`/settings/provider?id=${newApiProvider.id}`)
+    void navigate({ to: `/settings/provider?id=${newApiProvider.id}` })
   }
 
   useEffect(() => {
@@ -468,9 +480,15 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       addPainting(mode, newPainting)
       setPainting(newPainting)
     } else {
-      setPainting(filteredPaintings[0])
+      // 如果当前 painting 存在于 filteredPaintings 中，则优先显示当前 painting
+      const found = filteredPaintings.find((p) => p.id === painting.id)
+      if (found) {
+        setPainting(found)
+      } else {
+        setPainting(filteredPaintings[0])
+      }
     }
-  }, [filteredPaintings, mode, addPainting, getNewPainting])
+  }, [filteredPaintings, mode, addPainting, getNewPainting, painting.id])
 
   useEffect(() => {
     const timer = spaceClickTimer.current
@@ -480,6 +498,13 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
     }
   }, [])
+
+  // if painting.model is not set, set it to the first model in modelOptions
+  useEffect(() => {
+    if (!painting.model && modelOptions.length > 0) {
+      updatePaintingState({ model: modelOptions[0].value })
+    }
+  }, [modelOptions, painting.model, updatePaintingState])
 
   return (
     <Container>
@@ -502,12 +527,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               target="_blank"
               href={PROVIDER_URLS[newApiProvider.id]?.websites?.docs || 'https://docs.newapi.pro/apps/cherry-studio/'}>
               {t('paintings.learn_more')}
-              <ProviderLogo
-                radius="md"
-                src={getProviderLogo(newApiProvider.id)}
-                className="h-4 w-4 border-[0.5px] border-[var(--color-border)]"
-                style={{ marginLeft: 5 }}
-              />
+              {(() => {
+                const Icon = resolveProviderIcon(newApiProvider.id)
+                return Icon ? <Icon.Avatar size={16} className="ml-[5px]" /> : null
+              })()}
             </SettingHelpLink>
           </ProviderTitleContainer>
 
@@ -536,7 +559,31 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                     maxCount={16}
                     showUploadList={true}
                     listType="picture"
-                    beforeUpload={handleImageUpload}>
+                    beforeUpload={handleImageUpload}
+                    fileList={editImageFiles.map((file, idx): UploadFile<any> => {
+                      const rcFile: RcFile = {
+                        ...file,
+                        uid: String(idx),
+                        lastModifiedDate: file.lastModified ? new Date(file.lastModified) : new Date()
+                      }
+                      return {
+                        uid: rcFile.uid,
+                        name: rcFile.name || `image_${idx + 1}.png`,
+                        status: 'done',
+                        url: URL.createObjectURL(file),
+                        originFileObj: rcFile,
+                        lastModifiedDate: rcFile.lastModifiedDate
+                      }
+                    })}
+                    onRemove={(file) => {
+                      setEditImageFiles((prev) =>
+                        prev.filter((f) => {
+                          const idx = prev.indexOf(f)
+                          return String(idx) !== file.uid
+                        })
+                      )
+                      return true
+                    }}>
                     <ImagePlaceholder>
                       <ImageSizeImage src={IcImageUp} theme={theme} />
                     </ImagePlaceholder>
@@ -773,10 +820,6 @@ const ToolbarMenu = styled.div`
   flex-direction: row;
   align-items: center;
   gap: 6px;
-`
-
-const ProviderLogo = styled(Avatar)`
-  border: 0.5px solid var(--color-border);
 `
 
 const ModeSegmentedContainer = styled.div`

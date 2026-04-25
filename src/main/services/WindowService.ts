@@ -1,30 +1,34 @@
-// just import the themeService to ensure the theme is initialized
-import './ThemeService'
-
-import { preferenceService } from '@data/PreferenceService'
 import { is } from '@electron-toolkit/utils'
 import { loggerService } from '@logger'
 import { isDev, isLinux, isMac, isWin } from '@main/constant'
-import { getFilesDir } from '@main/utils/file'
+import { application } from '@main/core/application'
+import { BaseService, Emitter, type Event, Injectable, Phase, ServicePhase } from '@main/core/lifecycle'
+import { getWindowsBackgroundMaterial, replaceDevtoolsFont } from '@main/utils/windowUtil'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme, screen, shell } from 'electron'
 import windowStateKeeper from 'electron-window-state'
-import { join } from 'path'
+import path, { join } from 'path'
 
-import icon from '../../../build/icon.png?asset'
+import iconPath from '../../../build/icon.png?asset'
 import { titleBarOverlayDark, titleBarOverlayLight } from '../config'
 import { contextMenu } from './ContextMenu'
-import { initSessionUserAgent } from './WebviewService'
+import { isSafeExternalUrl } from './security'
 
 const DEFAULT_MINIWINDOW_WIDTH = 550
 const DEFAULT_MINIWINDOW_HEIGHT = 400
 
-// const logger = loggerService.withContext('WindowService')
 const logger = loggerService.withContext('WindowService')
 
-export class WindowService {
-  private static instance: WindowService | null = null
+// Create nativeImage for Linux window icon (required for Wayland)
+const linuxIcon = isLinux ? nativeImage.createFromPath(iconPath) : undefined
+
+@Injectable('WindowService')
+@ServicePhase(Phase.WhenReady)
+export class WindowService extends BaseService {
+  private readonly _onMainWindowCreated: Emitter<BrowserWindow>
+  public readonly onMainWindowCreated: Event<BrowserWindow>
+
   private mainWindow: BrowserWindow | null = null
   private miniWindow: BrowserWindow | null = null
   private isPinnedMiniWindow: boolean = false
@@ -33,11 +37,120 @@ export class WindowService {
   private wasMainWindowFocused: boolean = false
   private lastRendererProcessCrashTime: number = 0
 
-  public static getInstance(): WindowService {
-    if (!WindowService.instance) {
-      WindowService.instance = new WindowService()
+  constructor() {
+    super()
+    this._onMainWindowCreated = this.registerDisposable(new Emitter<BrowserWindow>())
+    this.onMainWindowCreated = this._onMainWindowCreated.event
+  }
+
+  protected async onInit() {
+    this.registerIpcHandlers()
+    this.registerActivateHandler()
+    this.registerSecondInstanceHandler()
+  }
+
+  protected async onReady() {
+    // Mac: hide dock icon before window creation when launch to tray is set.
+    // Dock icon is visible from app launch; must hide early.
+    // The ready-to-show handler's app.dock?.show() restores it for non-tray mode.
+    const isLaunchToTray = application.get('PreferenceService').get('app.tray.on_launch')
+    if (isLaunchToTray) {
+      app.dock?.hide()
     }
-    return WindowService.instance
+
+    this.createMainWindow()
+  }
+
+  private checkMainWindow() {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+      throw new Error('Main window does not exist or has been destroyed')
+    }
+  }
+
+  private registerActivateHandler() {
+    const handler = () => {
+      const mainWindow = this.getMainWindow()
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        this.createMainWindow()
+      } else {
+        this.showMainWindow()
+      }
+    }
+    app.on('activate', handler)
+    this.registerDisposable(() => app.removeListener('activate', handler))
+  }
+
+  private registerSecondInstanceHandler() {
+    // Protocol URL dispatch is handled by ProtocolService on the same event.
+    // Multiple listeners on 'second-instance' are intentional: ProtocolService
+    // dispatches the URL, WindowService restores the window.
+    const handler = () => this.showMainWindow()
+    app.on('second-instance', handler)
+    this.registerDisposable(() => app.removeListener('second-instance', handler))
+  }
+
+  /**
+   * Resolves the BrowserWindow that originated the IPC call.
+   * Used for window-control channels (minimize/maximize/close) that must operate
+   * on whichever window sent the IPC — main window or a detached tab window.
+   * Throws if the sender cannot be mapped to a live window.
+   */
+  private resolveIpcSenderWindow(sender: Electron.WebContents): BrowserWindow {
+    const win = BrowserWindow.fromWebContents(sender)
+    if (win && !win.isDestroyed()) {
+      return win
+    }
+    throw new Error('WindowService: could not resolve a live BrowserWindow from IPC sender')
+  }
+
+  private registerIpcHandlers() {
+    this.ipcHandle(IpcChannel.Windows_SetMinimumSize, (_, width: number, height: number) => {
+      this.checkMainWindow()
+      this.mainWindow!.setMinimumSize(width, height)
+    })
+
+    this.ipcHandle(IpcChannel.Windows_ResetMinimumSize, () => {
+      this.checkMainWindow()
+      this.mainWindow!.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+      const [width, height] = this.mainWindow!.getSize() ?? [MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT]
+      if (width < MIN_WINDOW_WIDTH) {
+        this.mainWindow!.setSize(MIN_WINDOW_WIDTH, height)
+      }
+    })
+
+    this.ipcHandle(IpcChannel.Windows_GetSize, () => {
+      this.checkMainWindow()
+      const [width, height] = this.mainWindow!.getSize() ?? [MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT]
+      return [width, height]
+    })
+
+    this.ipcHandle(IpcChannel.Windows_Minimize, (event) => {
+      this.resolveIpcSenderWindow(event.sender).minimize()
+    })
+
+    this.ipcHandle(IpcChannel.Windows_Maximize, (event) => {
+      this.resolveIpcSenderWindow(event.sender).maximize()
+    })
+
+    this.ipcHandle(IpcChannel.Windows_Unmaximize, (event) => {
+      this.resolveIpcSenderWindow(event.sender).unmaximize()
+    })
+
+    this.ipcHandle(IpcChannel.Windows_Close, (event) => {
+      this.resolveIpcSenderWindow(event.sender).close()
+    })
+
+    this.ipcHandle(IpcChannel.Windows_IsMaximized, (event) => {
+      return this.resolveIpcSenderWindow(event.sender).isMaximized()
+    })
+
+    this.ipcHandle(IpcChannel.MiniWindow_Show, () => this.showMiniWindow())
+    this.ipcHandle(IpcChannel.MiniWindow_Hide, () => this.hideMiniWindow())
+    this.ipcHandle(IpcChannel.MiniWindow_Close, () => this.closeMiniWindow())
+    this.ipcHandle(IpcChannel.MiniWindow_Toggle, () => this.toggleMiniWindow())
+    this.ipcHandle(IpcChannel.MiniWindow_SetPin, (_, isPinned: boolean) => this.setPinMiniWindow(isPinned))
+
+    this.ipcHandle(IpcChannel.App_QuoteToMain, (_, text: string) => this.quoteToMainWindow(text))
   }
 
   public createMainWindow(): BrowserWindow {
@@ -47,12 +160,20 @@ export class WindowService {
       return this.mainWindow
     }
 
+    const preferenceService = application.get('PreferenceService')
+
     const mainWindowState = windowStateKeeper({
       defaultWidth: MIN_WINDOW_WIDTH,
       defaultHeight: MIN_WINDOW_HEIGHT,
       fullScreen: false,
       maximize: false
     })
+    const windowsBackgroundMaterial = getWindowsBackgroundMaterial()
+    let mainWindowBackgroundColor: string | undefined
+
+    if (!isMac && !windowsBackgroundMaterial) {
+      mainWindowBackgroundColor = nativeTheme.shouldUseDarkColors ? '#181818' : '#FFFFFF'
+    }
 
     this.mainWindow = new BrowserWindow({
       x: mainWindowState.x,
@@ -72,14 +193,16 @@ export class WindowService {
         ? {
             titleBarStyle: 'hidden',
             titleBarOverlay: nativeTheme.shouldUseDarkColors ? titleBarOverlayDark : titleBarOverlayLight,
-            trafficLightPosition: { x: 8, y: 13 }
+            trafficLightPosition: { x: 13, y: 13 }
           }
         : {
-            frame: false // Frameless window for Windows and Linux
+            // On Linux, allow using system title bar if setting is enabled
+            frame: isLinux && preferenceService.get('app.use_system_title_bar')
           }),
-      backgroundColor: isMac ? undefined : nativeTheme.shouldUseDarkColors ? '#181818' : '#FFFFFF',
+      ...(windowsBackgroundMaterial ? { backgroundMaterial: windowsBackgroundMaterial } : {}),
+      ...(mainWindowBackgroundColor ? { backgroundColor: mainWindowBackgroundColor } : {}),
       darkTheme: nativeTheme.shouldUseDarkColors,
-      ...(isLinux ? { icon } : {}),
+      ...(isLinux ? { icon: linuxIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,
@@ -99,8 +222,7 @@ export class WindowService {
       this.miniWindow = this.createMiniWindow(true)
     }
 
-    //init the MinApp webviews' useragent
-    initSessionUserAgent()
+    this._onMainWindowCreated.fire(this.mainWindow)
 
     return this.mainWindow
   }
@@ -115,10 +237,12 @@ export class WindowService {
     this.setupWebContentsHandlers(mainWindow)
     this.setupWindowLifecycleEvents(mainWindow)
     this.setupMainWindowMonitor(mainWindow)
+    replaceDevtoolsFont(mainWindow)
     this.loadMainWindowContent(mainWindow)
   }
 
   private setupSpellCheck(mainWindow: BrowserWindow) {
+    const preferenceService = application.get('PreferenceService')
     const enableSpellCheck = preferenceService.get('app.spell_check.enabled')
     if (enableSpellCheck) {
       try {
@@ -141,7 +265,7 @@ export class WindowService {
         mainWindow.webContents.reload()
       } else {
         // 如果小于1分钟，则退出应用, 可能是连续crash，需要退出应用
-        app.exit(1)
+        application.forceExit(1)
       }
     })
   }
@@ -149,7 +273,7 @@ export class WindowService {
   private setupMaximize(mainWindow: BrowserWindow, isMaximized: boolean) {
     if (isMaximized) {
       // 如果是从托盘启动，则需要延迟最大化，否则显示的就不是重启前的最大化窗口了
-      preferenceService.get('app.tray.on_launch')
+      application.get('PreferenceService').get('app.tray.on_launch')
         ? mainWindow.once('show', () => {
             mainWindow.maximize()
           })
@@ -174,13 +298,14 @@ export class WindowService {
 
   private setupWindowEvents(mainWindow: BrowserWindow) {
     mainWindow.once('ready-to-show', () => {
+      const preferenceService = application.get('PreferenceService')
       mainWindow.webContents.setZoomFactor(preferenceService.get('app.zoom_factor'))
 
       // show window only when laucn to tray not set
       const isLaunchToTray = preferenceService.get('app.tray.on_launch')
       if (!isLaunchToTray) {
         //[mac]hacky-fix: miniWindow set visibleOnFullScreen:true will cause dock icon disappeared
-        app.dock?.show()
+        void app.dock?.show()
         mainWindow.show()
       }
     })
@@ -203,14 +328,14 @@ export class WindowService {
     // and resize ipc
     //
     mainWindow.on('will-resize', () => {
-      mainWindow.webContents.setZoomFactor(preferenceService.get('app.zoom_factor'))
+      mainWindow.webContents.setZoomFactor(application.get('PreferenceService').get('app.zoom_factor'))
       mainWindow.webContents.send(IpcChannel.Windows_Resize, mainWindow.getSize())
     })
 
     // set the zoom factor again when the window is going to restore
     // minimize and restore will cause zoom reset
     mainWindow.on('restore', () => {
-      mainWindow.webContents.setZoomFactor(preferenceService.get('app.zoom_factor'))
+      mainWindow.webContents.setZoomFactor(application.get('PreferenceService').get('app.zoom_factor'))
     })
 
     // ARCH: as `will-resize` is only for Win & Mac,
@@ -218,17 +343,19 @@ export class WindowService {
     // but `resize` will fliker the ui
     if (isLinux) {
       mainWindow.on('resize', () => {
-        mainWindow.webContents.setZoomFactor(preferenceService.get('app.zoom_factor'))
+        mainWindow.webContents.setZoomFactor(application.get('PreferenceService').get('app.zoom_factor'))
         mainWindow.webContents.send(IpcChannel.Windows_Resize, mainWindow.getSize())
       })
     }
 
     mainWindow.on('unmaximize', () => {
       mainWindow.webContents.send(IpcChannel.Windows_Resize, mainWindow.getSize())
+      mainWindow.webContents.send(IpcChannel.Windows_MaximizedChanged, false)
     })
 
     mainWindow.on('maximize', () => {
       mainWindow.webContents.send(IpcChannel.Windows_Resize, mainWindow.getSize())
+      mainWindow.webContents.send(IpcChannel.Windows_MaximizedChanged, true)
     })
 
     // 添加Escape键退出全屏的支持
@@ -255,13 +382,23 @@ export class WindowService {
   }
 
   private setupWebContentsHandlers(mainWindow: BrowserWindow) {
+    // Fix for Electron bug where zoom resets during in-page navigation (route changes)
+    // This complements the resize-based workaround by catching navigation events
+    mainWindow.webContents.on('did-navigate-in-page', () => {
+      mainWindow.webContents.setZoomFactor(application.get('PreferenceService').get('app.zoom_factor'))
+    })
+
     mainWindow.webContents.on('will-navigate', (event, url) => {
       if (url.includes('localhost:517')) {
         return
       }
 
       event.preventDefault()
-      shell.openExternal(url)
+      if (isSafeExternalUrl(url)) {
+        void shell.openExternal(url)
+      } else {
+        logger.warn(`Blocked navigation to untrusted URL scheme: ${url}`)
+      }
     })
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -271,12 +408,12 @@ export class WindowService {
         'https://account.siliconflow.cn/oauth',
         'https://cloud.siliconflow.cn/bills',
         'https://cloud.siliconflow.cn/expensebill',
-        'https://aihubmix.com/token',
-        'https://aihubmix.com/topup',
-        'https://aihubmix.com/statistics',
+        'https://console.aihubmix.com/token',
+        'https://console.aihubmix.com/topup',
+        'https://console.aihubmix.com/statistics',
         'https://dash.302.ai/sso/login',
         'https://dash.302.ai/charge',
-        'https://www.aiionly.com/login'
+        'https://maas.aiionly.com/login'
       ]
 
       if (oauthProviderUrls.some((link) => url.startsWith(link))) {
@@ -292,11 +429,22 @@ export class WindowService {
 
       if (url.includes('http://file/')) {
         const fileName = url.replace('http://file/', '')
-        const storageDir = getFilesDir()
-        const filePath = storageDir + '/' + fileName
-        shell.openPath(filePath).catch((err) => logger.error('Failed to open file:', err))
+        if (!fileName) {
+          logger.warn('Blocked empty file name in http://file/ URL')
+          return { action: 'deny' }
+        }
+        const storageDir = application.getPath('feature.files.data')
+        const filePath = path.resolve(storageDir, fileName)
+        // Prevent path traversal: ensure resolved path is within storageDir
+        if (!filePath.startsWith(path.resolve(storageDir) + path.sep)) {
+          logger.warn(`Blocked path traversal attempt: ${fileName}`)
+        } else {
+          shell.openPath(filePath).catch((err) => logger.error('Failed to open file:', err))
+        }
+      } else if (isSafeExternalUrl(details.url)) {
+        void shell.openExternal(details.url)
       } else {
-        shell.openExternal(details.url)
+        logger.warn(`Blocked shell.openExternal for untrusted URL scheme: ${details.url}`)
       }
 
       return { action: 'deny' }
@@ -325,10 +473,10 @@ export class WindowService {
 
   private loadMainWindowContent(mainWindow: BrowserWindow) {
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+      void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
       // mainWindow.webContents.openDevTools()
     } else {
-      mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+      void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
     }
   }
 
@@ -338,19 +486,20 @@ export class WindowService {
 
   private setupWindowLifecycleEvents(mainWindow: BrowserWindow) {
     mainWindow.on('close', (event) => {
-      // save data before when close window
-      try {
-        mainWindow.webContents.send(IpcChannel.App_SaveData)
-      } catch (error) {
-        logger.error('Failed to save data:', error as Error)
-      }
+      // [v2] Removed: Redux persistor flush is no longer needed after v2 data refactoring
+      // try {
+      //   mainWindow.webContents.send(IpcChannel.App_SaveData)
+      // } catch (error) {
+      //   logger.error('Failed to save data:', error as Error)
+      // }
 
-      // 如果已经触发退出，直接退出
-      if (app.isQuitting) {
-        return app.quit()
+      // 如果已经触发退出，直接放行窗口关闭
+      if (application.isQuitting) {
+        return
       }
 
       // 托盘及关闭行为设置
+      const preferenceService = application.get('PreferenceService')
       const isShowTray = preferenceService.get('app.tray.enabled')
       const isTrayOnClose = preferenceService.get('app.tray.on_close')
 
@@ -359,7 +508,7 @@ export class WindowService {
         // 如果是Windows或Linux，直接退出
         // mac按照系统默认行为，不退出
         if (isWin || isLinux) {
-          return app.quit()
+          return application.quit()
         }
       }
 
@@ -375,13 +524,16 @@ export class WindowService {
 
       mainWindow.hide()
 
-      // TODO: don't hide dock icon when close to tray
-      // will cause the cmd+h behavior not working
-      // after the electron fix the bug, we can restore this code
-      // //for mac users, should hide dock icon if close to tray
-      // if (isMac && isTrayOnClose) {
-      //   app.dock?.hide()
-      // }
+      //for mac users, should hide dock icon if close to tray
+      if (isMac && isTrayOnClose) {
+        app.dock?.hide()
+
+        mainWindow.once('show', () => {
+          //restore the window can hide by cmd+h when the window is shown again
+          // https://github.com/electron/electron/pull/47970
+          void app.dock?.show()
+        })
+      }
     })
 
     mainWindow.on('closed', () => {
@@ -403,6 +555,23 @@ export class WindowService {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       if (this.mainWindow.isMinimized()) {
         this.mainWindow.restore()
+        return
+      }
+
+      /**
+       * [Linux] Special handling for window activation
+       * When the window is visible but covered by other windows, simply calling show() and focus()
+       * is not enough to bring it to the front. We need to hide it first, then show it again.
+       * This mimics the "close to tray and reopen" behavior which works correctly.
+       */
+      if (isLinux && this.mainWindow.isVisible() && !this.mainWindow.isFocused()) {
+        this.mainWindow.hide()
+        setImmediate(() => {
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.show()
+            this.mainWindow.focus()
+          }
+        })
         return
       }
 
@@ -453,7 +622,7 @@ export class WindowService {
     if (this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.isVisible()) {
       if (this.mainWindow.isFocused()) {
         // if tray is enabled, hide the main window, else do nothing
-        if (preferenceService.get('app.tray.on_close')) {
+        if (application.get('PreferenceService').get('app.tray.on_close')) {
           this.mainWindow.hide()
           app.dock?.hide()
         }
@@ -513,7 +682,9 @@ export class WindowService {
     miniWindowState.manage(this.miniWindow)
 
     //miniWindow should show in current desktop
-    this.miniWindow?.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    this.miniWindow?.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true
+    })
     //make miniWindow always on top of fullscreen apps with level set
     //[mac] level higher than 'floating' will cover the pinyin input method
     this.miniWindow.setAlwaysOnTop(true, 'floating')
@@ -547,16 +718,16 @@ export class WindowService {
     })
 
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      this.miniWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '/miniWindow.html')
+      void this.miniWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '/miniWindow.html')
     } else {
-      this.miniWindow.loadFile(join(__dirname, '../renderer/miniWindow.html'))
+      void this.miniWindow.loadFile(join(__dirname, '../renderer/miniWindow.html'))
     }
 
     return this.miniWindow
   }
 
   public showMiniWindow() {
-    const enableQuickAssistant = preferenceService.get('feature.quick_assistant.enabled')
+    const enableQuickAssistant = application.get('PreferenceService').get('feature.quick_assistant.enabled')
 
     if (!enableQuickAssistant) {
       return
@@ -632,6 +803,11 @@ export class WindowService {
       return
     } else if (isMac) {
       this.miniWindow.hide()
+      const majorVersion = parseInt(process.getSystemVersion().split('.')[0], 10)
+      if (majorVersion >= 26) {
+        // on macOS 26+, the popup of the mimiWindow would not change the focus to previous application.
+        return
+      }
       if (!this.wasMainWindowFocused) {
         app.hide()
       }
@@ -654,7 +830,7 @@ export class WindowService {
     this.showMiniWindow()
   }
 
-  public setPinMiniWindow(isPinned) {
+  public setPinMiniWindow(isPinned: boolean) {
     this.isPinnedMiniWindow = isPinned
   }
 
@@ -677,5 +853,3 @@ export class WindowService {
     }
   }
 }
-
-export const windowService = WindowService.getInstance()

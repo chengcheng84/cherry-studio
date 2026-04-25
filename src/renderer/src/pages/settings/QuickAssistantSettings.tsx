@@ -43,7 +43,7 @@ const QuickAssistantSettings: FC = () => {
   const handleEnableQuickAssistant = async (enable: boolean) => {
     await setEnableQuickAssistant(enable)
 
-    !enable && window.api.miniWindow.close()
+    void (!enable && window.api.miniWindow.close())
 
     if (enable && !clickTrayToShowQuickAssistant) {
       window.toast.info({
@@ -54,18 +54,18 @@ const QuickAssistantSettings: FC = () => {
     }
 
     if (enable && clickTrayToShowQuickAssistant) {
-      setTray(true)
+      void setTray(true)
     }
   }
 
   const handleClickTrayToShowQuickAssistant = async (checked: boolean) => {
     await setClickTrayToShowQuickAssistant(checked)
-    checked && setTray(true)
+    if (checked) void setTray(true)
   }
 
   const handleClickReadClipboardAtStartup = async (checked: boolean) => {
     await setReadClipboardAtStartup(checked)
-    window.api.miniWindow.close()
+    void window.api.miniWindow.close()
   }
 
   return (
@@ -82,14 +82,14 @@ const QuickAssistantSettings: FC = () => {
               iconProps={{ className: 'cursor-pointer' }}
             />
           </SettingRowTitle>
-          <Switch isSelected={enableQuickAssistant} onValueChange={handleEnableQuickAssistant} />
+          <Switch checked={enableQuickAssistant} onCheckedChange={handleEnableQuickAssistant} />
         </SettingRow>
         {enableQuickAssistant && (
           <>
             <SettingDivider />
             <SettingRow>
               <SettingRowTitle>{t('settings.quickAssistant.click_tray_to_show')}</SettingRowTitle>
-              <Switch isSelected={clickTrayToShowQuickAssistant} onValueChange={handleClickTrayToShowQuickAssistant} />
+              <Switch checked={clickTrayToShowQuickAssistant} onCheckedChange={handleClickTrayToShowQuickAssistant} />
             </SettingRow>
           </>
         )}
@@ -98,7 +98,7 @@ const QuickAssistantSettings: FC = () => {
             <SettingDivider />
             <SettingRow>
               <SettingRowTitle>{t('settings.quickAssistant.read_clipboard_at_startup')}</SettingRowTitle>
-              <Switch isSelected={readClipboardAtStartup} onValueChange={handleClickReadClipboardAtStartup} />
+              <Switch checked={readClipboardAtStartup} onCheckedChange={handleClickReadClipboardAtStartup} />
             </SettingRow>
           </>
         )}

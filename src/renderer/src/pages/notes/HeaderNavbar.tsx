@@ -1,18 +1,20 @@
-import { RowFlex, Tooltip } from '@cherrystudio/ui'
-import { BreadcrumbItem, Breadcrumbs } from '@heroui/react'
+import { RowFlex } from '@cherrystudio/ui'
 import { loggerService } from '@logger'
 import { NavbarCenter, NavbarHeader, NavbarRight } from '@renderer/components/app/Navbar'
+import BaseNavbarIcon from '@renderer/components/NavbarIcon'
+import GeneralPopup from '@renderer/components/Popups/GeneralPopup'
 import { useActiveNode } from '@renderer/hooks/useNotesQuery'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { useShowWorkspace } from '@renderer/hooks/useShowWorkspace'
 import { findNode } from '@renderer/services/NotesTreeService'
-import { Dropdown, Input } from 'antd'
+import { Breadcrumb, Dropdown, Input, Tooltip } from 'antd'
 import { t } from 'i18next'
 import { MoreHorizontal, PanelLeftClose, PanelRightClose, Star } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 
 import { menuItems } from './MenuConfig'
+import NotesSettings from './NotesSettings'
 
 const logger = loggerService.withContext('HeaderNavbar')
 
@@ -51,6 +53,35 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
       window.toast.error(t('common.copy_failed'))
     }
   }, [getCurrentNoteContent])
+
+  const handleExportToWord = useCallback(async () => {
+    try {
+      const content = getCurrentNoteContent?.()
+      if (!content) {
+        window.toast.warning(t('notes.no_content_to_export'))
+        return
+      }
+      if (!activeNode) {
+        window.toast.warning(t('notes.no_note_selected'))
+        return
+      }
+      const fileName = activeNode.name.replace('.md', '')
+      await window.api.export.toWord(content, fileName)
+    } catch (error) {
+      logger.error('Failed to export to Word:', error as Error)
+      window.toast.error(t('notes.export_to_word_failed'))
+    }
+  }, [getCurrentNoteContent, activeNode])
+
+  const handleShowSettings = useCallback(() => {
+    void GeneralPopup.show({
+      title: t('notes.settings.title'),
+      content: <NotesSettings />,
+      footer: null,
+      width: 600,
+      styles: { body: { padding: 0 } }
+    })
+  }, [])
 
   const handleBreadcrumbClick = useCallback(
     (item: { treePath: string; isFolder: boolean }) => {
@@ -130,7 +161,11 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
       ),
       onClick: () => {
         if (item.copyAction) {
-          handleCopyContent()
+          void handleCopyContent()
+        } else if (item.exportToWordAction) {
+          void handleExportToWord()
+        } else if (item.showSettingsPopup) {
+          handleShowSettings()
         } else if (item.action) {
           item.action(settings, updateSettings)
         }
@@ -175,14 +210,14 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
       style={{ justifyContent: 'flex-start', borderBottom: '0.5px solid var(--color-border)' }}>
       <RowFlex className="flex-[0_0_auto] items-center">
         {showWorkspace && (
-          <Tooltip content={t('navbar.hide_sidebar')} placement="bottom" delay={800}>
+          <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={0.8}>
             <NavbarIcon onClick={handleToggleShowWorkspace}>
               <PanelLeftClose size={18} />
             </NavbarIcon>
           </Tooltip>
         )}
         {!showWorkspace && (
-          <Tooltip content={t('navbar.show_sidebar')} placement="bottom" delay={800}>
+          <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.8} placement="right">
             <NavbarIcon onClick={handleToggleShowWorkspace}>
               <PanelRightClose size={18} />
             </NavbarIcon>
@@ -191,47 +226,48 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
       </RowFlex>
       <NavbarCenter style={{ flex: 1, minWidth: 0 }}>
         <BreadcrumbsContainer>
-          <Breadcrumbs style={{ borderRadius: 0 }}>
-            {breadcrumbItems.map((item, index) => {
+          <Breadcrumb
+            separator={'>'}
+            items={breadcrumbItems.map((item, index) => {
               const isLastItem = index === breadcrumbItems.length - 1
               const isCurrentNote = isLastItem && !item.isFolder
-
-              return (
-                <BreadcrumbItem key={item.key} isCurrent={isLastItem}>
-                  {isCurrentNote ? (
-                    <TitleInputWrapper>
-                      <TitleInput
-                        ref={titleInputRef}
-                        value={titleValue}
-                        onChange={handleTitleChange}
-                        onBlur={handleTitleBlur}
-                        onKeyDown={handleTitleKeyDown}
-                        size="small"
-                        variant="borderless"
-                        style={{
-                          fontSize: 'inherit',
-                          padding: 0,
-                          height: 'auto',
-                          lineHeight: 'inherit'
-                        }}
-                      />
-                    </TitleInputWrapper>
-                  ) : (
-                    <BreadcrumbTitle
-                      onClick={() => handleBreadcrumbClick(item)}
-                      $clickable={item.isFolder && !isLastItem}>
-                      {item.title}
-                    </BreadcrumbTitle>
-                  )}
-                </BreadcrumbItem>
-              )
-            })}
-          </Breadcrumbs>
+              return {
+                title: (
+                  <div key={item.key} className="flex">
+                    {isCurrentNote ? (
+                      <TitleInputWrapper>
+                        <TitleInput
+                          ref={titleInputRef}
+                          value={titleValue}
+                          onChange={handleTitleChange}
+                          onBlur={handleTitleBlur}
+                          onKeyDown={handleTitleKeyDown}
+                          size="small"
+                          variant="borderless"
+                          style={{
+                            fontSize: 'inherit',
+                            padding: 0,
+                            height: 'auto',
+                            lineHeight: 'inherit'
+                          }}
+                        />
+                      </TitleInputWrapper>
+                    ) : (
+                      <BreadcrumbTitle
+                        onClick={() => handleBreadcrumbClick(item)}
+                        $clickable={item.isFolder && !isLastItem}>
+                        {item.title}
+                      </BreadcrumbTitle>
+                    )}
+                  </div>
+                )
+              }
+            })}></Breadcrumb>
         </BreadcrumbsContainer>
       </NavbarCenter>
       <NavbarRight style={{ paddingRight: 0 }}>
         {canShowStarButton && (
-          <Tooltip content={activeNode.isStarred ? t('notes.unstar') : t('notes.star')} delay={800}>
+          <Tooltip title={activeNode.isStarred ? t('notes.unstar') : t('notes.star')} mouseEnterDelay={0.8}>
             <StarButton onClick={handleToggleStarred}>
               {activeNode.isStarred ? (
                 <Star size={18} fill="var(--color-status-warning)" stroke="var(--color-status-warning)" />
@@ -241,61 +277,28 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
             </StarButton>
           </Tooltip>
         )}
-        <Tooltip content={t('notes.settings.title')} delay={800}>
-          <div>
-            <Dropdown
-              menu={{ items: menuItems.map(buildMenuItem) }}
-              trigger={['click']}
-              placement="bottomRight"
-              destroyOnHidden={false}>
-              <NavbarIcon>
-                <MoreHorizontal size={18} />
-              </NavbarIcon>
-            </Dropdown>
-          </div>
+        <Tooltip title={t('notes.settings.title')} mouseEnterDelay={0.8}>
+          <Dropdown
+            menu={{ items: menuItems.map(buildMenuItem) }}
+            trigger={['click']}
+            placement="bottomRight"
+            destroyOnHidden={false}>
+            <NavbarIcon>
+              <MoreHorizontal size={18} />
+            </NavbarIcon>
+          </Dropdown>
         </Tooltip>
       </NavbarRight>
     </NavbarHeader>
   )
 }
 
-export const NavbarIcon = styled.div`
-  -webkit-app-region: none;
-  border-radius: 8px;
-  height: 30px;
-  padding: 0 7px;
-  display: flex;
-  flex-direction: row;
-  justify-content: center;
-  align-items: center;
-  transition: all 0.2s ease-in-out;
-  cursor: pointer;
-  .iconfont {
-    font-size: 18px;
-    color: var(--color-icon);
-    &.icon-a-addchat {
-      font-size: 20px;
-    }
-    &.icon-a-darkmode {
-      font-size: 20px;
-    }
-    &.icon-appstore {
-      font-size: 20px;
-    }
-  }
-  .anticon {
-    color: var(--color-icon);
-    font-size: 16px;
-  }
+const NavbarIcon = styled(BaseNavbarIcon)`
   svg {
-    color: var(--color-icon);
-    width: 18px;
-    height: 18px;
-  }
-  &:hover {
-    background-color: var(--color-background-mute);
-    color: var(--color-icon-white);
-  }
+      color: var(--color-icon);
+      width: 18px;
+      height: 18px;
+    }
 `
 
 export const StarButton = styled.div`
@@ -310,7 +313,7 @@ export const StarButton = styled.div`
   transition: all 0.2s ease-in-out;
   cursor: pointer;
   svg {
-    color: inherit;
+    color: var(--color-icon);
   }
 
   &:hover {
@@ -346,13 +349,6 @@ export const BreadcrumbsContainer = styled.div`
   & li:last-child {
     flex: 1 !important;
     min-width: 0 !important;
-    max-width: none !important;
-  }
-
-  /* 覆盖 HeroUI BreadcrumbItem 的样式 */
-  & li:last-child [data-slot="item"] {
-    flex: 1 !important;
-    width: 100% !important;
     max-width: none !important;
   }
 

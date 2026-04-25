@@ -31,8 +31,7 @@ import {
 } from '@renderer/types'
 import { getFileExtension, isTextFile, runAsyncFunction, uuid } from '@renderer/utils'
 import { abortCompletion } from '@renderer/utils/abortController'
-import { isAbortError } from '@renderer/utils/error'
-import { formatErrorMessage } from '@renderer/utils/error'
+import { formatErrorMessageWithPrefix, isAbortError } from '@renderer/utils/error'
 import { getFilesFromDropEvent, getTextFromDropEvent } from '@renderer/utils/input'
 import {
   createInputScrollHandler,
@@ -40,6 +39,7 @@ import {
   detectLanguage,
   determineTargetLanguage
 } from '@renderer/utils/translate'
+import { documentExts } from '@shared/config/constant'
 import { imageExts, MB, textExts } from '@shared/config/constant'
 import { FloatButton, Popover, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
@@ -67,7 +67,7 @@ const TranslatePage: FC = () => {
   const { prompt, getLanguageByLangcode, settings } = useTranslate()
   const { autoCopy } = settings
   const { shikiMarkdownIt } = useCodeStyle()
-  const { onSelectFile, selecting, clearFiles } = useFiles({ extensions: [...imageExts, ...textExts] })
+  const { onSelectFile, selecting, clearFiles } = useFiles({ extensions: [...imageExts, ...textExts, ...documentExts] })
   const { ocr } = useOcr()
   const { setTimeoutTimer } = useTimer()
 
@@ -112,7 +112,7 @@ const TranslatePage: FC = () => {
   // 控制翻译模型切换
   const handleModelChange = (model: Model) => {
     setTranslateModel(model)
-    db.settings.put({ id: 'translate:model', value: model.id })
+    void db.settings.put({ id: 'translate:model', value: model.id })
   }
 
   // 控制翻译状态
@@ -183,7 +183,7 @@ const TranslatePage: FC = () => {
             window.toast.info(t('translate.info.aborted'))
           } else {
             logger.error('Failed to translate text', e as Error)
-            window.toast.error(t('translate.error.failed') + ': ' + formatErrorMessage(e))
+            window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.failed')))
           }
           setTranslating(false)
           return
@@ -204,11 +204,11 @@ const TranslatePage: FC = () => {
           await saveTranslateHistory(text, translated, actualSourceLanguage.langCode, actualTargetLanguage.langCode)
         } catch (e) {
           logger.error('Failed to save translate history', e as Error)
-          window.toast.error(t('translate.history.error.save') + ': ' + formatErrorMessage(e))
+          window.toast.error(formatErrorMessageWithPrefix(e, t('translate.history.error.save')))
         }
       } catch (e) {
         logger.error('Failed to translate', e as Error)
-        window.toast.error(t('translate.error.unknown') + ': ' + formatErrorMessage(e))
+        window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.unknown')))
       }
     },
     [autoCopy, copy, setTimeoutTimer, setTranslatedContent, setTranslating, t, translating]
@@ -268,7 +268,7 @@ const TranslatePage: FC = () => {
       await translate(text, actualSourceLanguage, actualTargetLanguage)
     } catch (error) {
       logger.error('Translation error:', error as Error)
-      window.toast.error(t('translate.error.failed') + ': ' + formatErrorMessage(error))
+      window.toast.error(formatErrorMessageWithPrefix(error, t('translate.error.failed')))
       return
     } finally {
       setTranslating(false)
@@ -299,7 +299,7 @@ const TranslatePage: FC = () => {
   // 控制双向翻译切换
   const toggleBidirectional = (value: boolean) => {
     setIsBidirectional(value)
-    db.settings.put({ id: 'translate:bidirectional:enabled', value })
+    void db.settings.put({ id: 'translate:bidirectional:enabled', value })
   }
 
   // 控制历史记录点击
@@ -343,6 +343,8 @@ const TranslatePage: FC = () => {
     }
     setSourceLanguage(targetLanguage)
     setTargetLanguage(source)
+    void db.settings.put({ id: 'translate:source:language', value: targetLanguage.langCode })
+    void db.settings.put({ id: 'translate:target:language', value: source.langCode })
   }, [couldExchangeAuto, detectedLanguage, sourceLanguage, t, targetLanguage])
 
   useEffect(() => {
@@ -354,7 +356,7 @@ const TranslatePage: FC = () => {
   useEffect(() => {
     if (enableMarkdown && translatedContent) {
       let isMounted = true
-      shikiMarkdownIt(translatedContent).then((rendered) => {
+      void shikiMarkdownIt(translatedContent).then((rendered) => {
         if (isMounted) {
           setRenderedMarkdown(rendered)
         }
@@ -370,7 +372,7 @@ const TranslatePage: FC = () => {
 
   // 控制设置加载
   useEffect(() => {
-    runAsyncFunction(async () => {
+    void runAsyncFunction(async () => {
       const targetLang = await db.settings.get({ id: 'translate:target:language' })
       targetLang && setTargetLanguage(getLanguageByLangcode(targetLang.value))
 
@@ -394,7 +396,7 @@ const TranslatePage: FC = () => {
         } else {
           const defaultPair: [TranslateLanguage, TranslateLanguage] = [LanguagesEnum.enUS, LanguagesEnum.zhCN]
           setBidirectionalPair(defaultPair)
-          db.settings.put({
+          void db.settings.put({
             id: 'translate:bidirectional:pair',
             value: [defaultPair[0].langCode, defaultPair[1].langCode]
           })
@@ -416,7 +418,7 @@ const TranslatePage: FC = () => {
         setAutoDetectionMethod(autoDetectionMethodSetting.value)
       } else {
         setAutoDetectionMethod('franc')
-        db.settings.put({ id: 'translate:detect:method', value: 'franc' })
+        void db.settings.put({ id: 'translate:detect:method', value: 'franc' })
       }
     })
   }, [getLanguageByLangcode])
@@ -428,7 +430,7 @@ const TranslatePage: FC = () => {
       setAutoDetectionMethod(method)
     } catch (e) {
       logger.error('Failed to update auto detection method setting.', e as Error)
-      window.toast.error(t('translate.error.detect.update_setting') + formatErrorMessage(e))
+      window.toast.error(formatErrorMessageWithPrefix(e, t('translate.error.detect.update_setting')))
     }
   }
 
@@ -437,7 +439,7 @@ const TranslatePage: FC = () => {
     const isEnterPressed = e.key === 'Enter'
     if (isEnterPressed && !e.nativeEvent.isComposing && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
-      onTranslate()
+      void onTranslate()
     }
   }
 
@@ -468,7 +470,7 @@ const TranslatePage: FC = () => {
         value={targetLanguage.langCode}
         onChange={(value) => {
           setTargetLanguage(getLanguageByLangcode(value))
-          db.settings.put({ id: 'translate:target:language', value })
+          void db.settings.put({ id: 'translate:target:language', value })
         }}
       />
     )
@@ -486,33 +488,56 @@ const TranslatePage: FC = () => {
   const readFile = useCallback(
     async (file: FileMetadata) => {
       const _readFile = async () => {
-        let isText: boolean
         try {
-          // 检查文件是否为文本文件
-          isText = await isTextFile(file.path)
-        } catch (e) {
-          logger.error('Failed to check if file is text.', e as Error)
-          window.toast.error(t('translate.files.error.check_type') + ': ' + formatErrorMessage(e))
-          return
-        }
+          const fileExtension = getFileExtension(file.path)
 
-        if (!isText) {
-          window.toast.error(t('common.file.not_supported', { type: getFileExtension(file.path) }))
-          logger.error('Unsupported file type.')
-          return
-        }
+          // Check if file is supported format (text file or document file)
+          let isText: boolean
+          const isDocument: boolean = documentExts.includes(fileExtension)
 
-        // the threshold may be too large
-        if (file.size > 5 * MB) {
-          window.toast.error(t('translate.files.error.too_large') + ' (0 ~ 5 MB)')
-        } else {
+          if (!isDocument) {
+            try {
+              // For non-document files, check if it's a text file
+              isText = await isTextFile(file.path)
+            } catch (e) {
+              logger.error('Failed to check file type.', e as Error)
+              window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.check_type')))
+              return
+            }
+          } else {
+            isText = false
+          }
+
+          if (!isText && !isDocument) {
+            window.toast.error(t('common.file.not_supported', { type: fileExtension }))
+            logger.error('Unsupported file type.')
+            return
+          }
+
+          // File size check - document files allowed to be larger
+          const maxSize = isDocument ? 20 * MB : 5 * MB
+          if (file.size > maxSize) {
+            window.toast.error(t('translate.files.error.too_large') + ` (0 ~ ${maxSize / MB} MB)`)
+            return
+          }
+
+          let result: string
           try {
-            const result = await window.api.fs.readText(file.path)
+            if (isDocument) {
+              // Use the new document reading API
+              result = await window.api.file.readExternal(file.path, true)
+            } else {
+              // Read text file
+              result = await window.api.fs.readText(file.path)
+            }
             setText(text + result)
           } catch (e) {
-            logger.error('Failed to read text file.', e as Error)
-            window.toast.error(t('translate.files.error.unknown') + ': ' + formatErrorMessage(e))
+            logger.error('Failed to read file.', e as Error)
+            window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
           }
+        } catch (e) {
+          logger.error('Failed to read file.', e as Error)
+          window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
         }
       }
       const promise = _readFile()
@@ -556,7 +581,7 @@ const TranslatePage: FC = () => {
       await processFile(file)
     } catch (e) {
       logger.error('Unknown error when selecting file.', e as Error)
-      window.toast.error(t('translate.files.error.unknown') + ': ' + formatErrorMessage(e))
+      window.toast.error(formatErrorMessageWithPrefix(e, t('translate.files.error.unknown')))
     } finally {
       clearFiles()
       setIsProcessing(false)
@@ -611,7 +636,7 @@ const TranslatePage: FC = () => {
         if (droppedFiles) {
           const file = getSingleFile(droppedFiles) as FileMetadata
           if (!file) return
-          processFile(file)
+          void processFile(file)
         }
       }
       await process()
@@ -711,7 +736,7 @@ const TranslatePage: FC = () => {
               onChange={(value) => {
                 if (value !== 'auto') setSourceLanguage(getLanguageByLangcode(value))
                 else setSourceLanguage('auto')
-                db.settings.put({ id: 'translate:source:language', value })
+                void db.settings.put({ id: 'translate:source:language', value })
               }}
               extraOptionsBefore={[
                 {

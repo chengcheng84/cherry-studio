@@ -1,4 +1,5 @@
 import { Tooltip } from '@cherrystudio/ui'
+import { usePreference } from '@data/hooks/usePreference'
 import { isLinux, isWin } from '@renderer/config/constant'
 import { Minus, Square, X } from 'lucide-react'
 import type { SVGProps } from 'react'
@@ -49,10 +50,11 @@ export const WindowRestoreIcon = ({ size = '1.1em', ...props }: WindowRestoreIco
 const WindowControls: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false)
   const { t } = useTranslation()
+  const [useSystemTitleBar] = usePreference('app.use_system_title_bar')
 
   useEffect(() => {
     // Check initial maximized state
-    window.api.windowControls.isMaximized().then(setIsMaximized)
+    void window.api.windowControls.isMaximized().then(setIsMaximized)
 
     // Listen for maximized state changes
     const unsubscribe = window.api.windowControls.onMaximizedChange(setIsMaximized)
@@ -67,39 +69,57 @@ const WindowControls: React.FC = () => {
     return null
   }
 
+  // Hide on Linux if using system title bar
+  if (isLinux && useSystemTitleBar) {
+    return null
+  }
+
   const handleMinimize = () => {
-    window.api.windowControls.minimize()
+    void window.api.windowControls.minimize()
   }
 
   const handleMaximize = () => {
     if (isMaximized) {
-      window.api.windowControls.unmaximize()
+      void window.api.windowControls.unmaximize()
     } else {
-      window.api.windowControls.maximize()
+      void window.api.windowControls.maximize()
     }
   }
 
   const handleClose = () => {
-    window.api.windowControls.close()
+    void window.api.windowControls.close()
   }
+
+  const tooltipTriggerWrap = { placeholder: 'relative z-10 flex h-full min-h-0' } as const
 
   return (
     <WindowControlsContainer>
-      <Tooltip placement="bottom" content={t('navbar.window.minimize')} delay={DEFAULT_DELAY}>
-        <ControlButton onClick={handleMinimize} aria-label="Minimize">
+      <Tooltip
+        placement="bottom"
+        content={t('navbar.window.minimize')}
+        delay={DEFAULT_DELAY}
+        classNames={tooltipTriggerWrap}>
+        <ControlButton onClick={handleMinimize} aria-label={t('navbar.window.minimize')}>
           <Minus size={14} />
         </ControlButton>
       </Tooltip>
       <Tooltip
         placement="bottom"
         content={isMaximized ? t('navbar.window.restore') : t('navbar.window.maximize')}
-        delay={DEFAULT_DELAY}>
-        <ControlButton onClick={handleMaximize} aria-label={isMaximized ? 'Restore' : 'Maximize'}>
+        delay={DEFAULT_DELAY}
+        classNames={tooltipTriggerWrap}>
+        <ControlButton
+          onClick={handleMaximize}
+          aria-label={isMaximized ? t('navbar.window.restore') : t('navbar.window.maximize')}>
           {isMaximized ? <WindowRestoreIcon size={14} /> : <Square size={14} />}
         </ControlButton>
       </Tooltip>
-      <Tooltip placement="bottom" content={t('navbar.window.close')} delay={DEFAULT_DELAY}>
-        <ControlButton $isClose onClick={handleClose} aria-label="Close">
+      <Tooltip
+        placement="bottom"
+        content={t('navbar.window.close')}
+        delay={DEFAULT_DELAY}
+        classNames={tooltipTriggerWrap}>
+        <ControlButton $isClose onClick={handleClose} aria-label={t('navbar.window.close')}>
           <X size={17} />
         </ControlButton>
       </Tooltip>

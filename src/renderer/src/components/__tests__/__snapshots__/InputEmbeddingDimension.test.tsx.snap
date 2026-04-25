@@ -8,7 +8,7 @@ exports[`InputEmbeddingDimension > basic rendering > should match snapshot with 
   <input
     data-testid="input-number"
     placeholder="请输入维度大小"
-    style="flex: 1;"
+    style="flex: 1 1 0%;"
     type="number"
     value="1536"
   />
@@ -16,7 +16,7 @@ exports[`InputEmbeddingDimension > basic rendering > should match snapshot with 
     data-testid="tooltip"
   >
     <button
-      aria-label="Get embedding dimension"
+      aria-label="Get Embedding Dimension"
       data-testid="button"
       role="button"
       type="button"
@@ -43,7 +43,7 @@ exports[`InputEmbeddingDimension > basic rendering > should match snapshot with 
   <input
     data-testid="input-number"
     placeholder="请输入维度大小"
-    style="flex: 1;"
+    style="flex: 1 1 0%;"
     type="number"
     value=""
   />
@@ -51,7 +51,7 @@ exports[`InputEmbeddingDimension > basic rendering > should match snapshot with 
     data-testid="tooltip"
   >
     <button
-      aria-label="Get embedding dimension"
+      aria-label="Get Embedding Dimension"
       data-testid="button"
       disabled=""
       role="button"

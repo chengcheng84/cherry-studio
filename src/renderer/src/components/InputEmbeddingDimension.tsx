@@ -1,6 +1,5 @@
 import { Button, Tooltip } from '@cherrystudio/ui'
 import { loggerService } from '@logger'
-import AiProvider from '@renderer/aiCore'
 import { RefreshIcon } from '@renderer/components/Icons'
 import { useProvider } from '@renderer/hooks/useProvider'
 import type { Model } from '@renderer/types'
@@ -8,6 +7,8 @@ import { getErrorMessage } from '@renderer/utils'
 import { InputNumber, Space } from 'antd'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { AiProvider } from '../aiCore'
 
 const logger = loggerService.withContext('DimensionsInput')
 
@@ -77,7 +78,7 @@ const InputEmbeddingDimension = ({
       <Tooltip content={t('knowledge.dimensions_auto_set')}>
         <Button
           role="button"
-          aria-label="Get embedding dimension"
+          aria-label={t('common.get_embedding_dimension')}
           disabled={disabled || loading}
           onClick={handleFetchDimension}
           size="icon-sm">

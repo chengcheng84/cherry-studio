@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-syntax */
+import { LOGS_DIR } from '@main/core/paths/constants'
 import type { LogContextData, LogLevel, LogSourceWithContext } from '@shared/config/logger'
 import { LEVEL, LEVEL_MAP } from '@shared/config/logger'
 import { IpcChannel } from '@shared/IpcChannel'
@@ -49,7 +50,6 @@ const DEFAULT_LEVEL = isDev ? LEVEL.SILLY : LEVEL.INFO
  *   Chinese: `docs/technical/how-to-use-logger-zh.md`
  */
 export class LoggerService {
-  private static instance: LoggerService
   private logger: winston.Logger
 
   // env variables, only used in dev mode
@@ -61,13 +61,15 @@ export class LoggerService {
   private module: string = ''
   private context: Record<string, any> = {}
 
-  private constructor() {
+  constructor() {
     if (!isMainThread) {
       throw new Error('[LoggerService] NOT support worker thread yet, can only be instantiated in main process.')
     }
 
-    // Create logs directory path
-    this.logsDir = path.join(app.getPath('userData'), 'logs')
+    // Logs directory comes from the central early-constants module so that
+    // LoggerService, BootConfigService, and pathRegistry all share a single
+    // source of truth (see src/main/core/paths/constants.ts).
+    this.logsDir = LOGS_DIR
 
     // env variables, only used in dev mode
     // only affect console output, not affect file output
@@ -143,16 +145,6 @@ export class LoggerService {
 
     //register ipc handler, for renderer process to log to main process
     this.registerIpcHandler()
-  }
-
-  /**
-   * Get the singleton instance of LoggerService
-   */
-  public static getInstance(): LoggerService {
-    if (!LoggerService.instance) {
-      LoggerService.instance = new LoggerService()
-    }
-    return LoggerService.instance
   }
 
   /**
@@ -388,4 +380,4 @@ export class LoggerService {
   }
 }
 
-export const loggerService = LoggerService.getInstance()
+export const loggerService = new LoggerService()

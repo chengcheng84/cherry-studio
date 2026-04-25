@@ -1,23 +1,51 @@
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
 import { cacheService } from '@data/CacheService'
+import { preferenceService } from '@data/PreferenceService'
 import { loggerService } from '@logger'
 import { AiSdkToChunkAdapter } from '@renderer/aiCore/chunk/AiSdkToChunkAdapter'
 import { AgentApiClient } from '@renderer/api/agent'
 import db from '@renderer/databases'
-import { fetchMessagesSummary } from '@renderer/services/ApiService'
-import { DbService } from '@renderer/services/db/DbService'
+import { getModel } from '@renderer/hooks/useModel'
+import { fetchMessagesSummary, transformMessagesAndFetch } from '@renderer/services/ApiService'
+import { dbService } from '@renderer/services/db/DbService'
 import FileManager from '@renderer/services/FileManager'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
-import { transformMessagesAndFetch } from '@renderer/services/OrchestrateService'
+import { streamingService } from '@renderer/services/messageStreaming/StreamingService'
 import { endSpan } from '@renderer/services/SpanManagerService'
 import { createStreamProcessor, type StreamProcessorCallbacks } from '@renderer/services/StreamProcessingService'
 import store from '@renderer/store'
 import { updateTopicUpdatedAt } from '@renderer/store/assistants'
 import { type ApiServerConfig, type Assistant, type FileMetadata, type Model, type Topic } from '@renderer/types'
-import type { AgentSessionEntity, GetAgentSessionResponse } from '@renderer/types/agent'
+import type {
+  AgentEffort,
+  AgentSessionEntity,
+  AgentThinkingConfig,
+  GetAgentSessionResponse
+} from '@renderer/types/agent'
 import { ChunkType } from '@renderer/types/chunk'
 import type { FileMessageBlock, ImageMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
-import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
+import {
+  AssistantMessageStatus,
+  MessageBlockStatus,
+  MessageBlockType,
+  UserMessageStatus
+} from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
 import { addAbortController } from '@renderer/utils/abortController'
 import {
@@ -43,18 +71,18 @@ import { mutate } from 'swr'
 import type { AppDispatch, RootState } from '../index'
 import { removeManyBlocks, updateOneBlock, upsertManyBlocks, upsertOneBlock } from '../messageBlock'
 import { newMessagesActions, selectMessagesForTopic } from '../newMessage'
-import {
-  bulkAddBlocksV2,
-  clearMessagesFromDBV2,
-  deleteMessageFromDBV2,
-  deleteMessagesFromDBV2,
-  loadTopicMessagesThunkV2,
-  saveMessageAndBlocksToDBV2,
-  updateBlocksV2,
-  updateFileCountV2,
-  updateMessageV2,
-  updateSingleBlockV2
-} from './messageThunk.v2'
+// import {
+//   bulkAddBlocksV2,
+//   clearMessagesFromDBV2,
+//   deleteMessageFromDBV2,
+//   deleteMessagesFromDBV2,
+//   loadTopicMessagesThunkV2,
+//   saveMessageAndBlocksToDBV2,
+//   updateBlocksV2,
+//   updateFileCountV2,
+//   updateMessageV2,
+//   updateSingleBlockV2
+// } from './messageThunk.v2'
 
 const logger = loggerService.withContext('MessageThunk')
 
@@ -68,10 +96,12 @@ type AgentSessionContext = {
   agentId: string
   sessionId: string
   agentSessionId?: string
+  effort?: AgentEffort
+  thinking?: AgentThinkingConfig
 }
 
 const agentSessionRenameLocks = new Set<string>()
-const dbFacade = DbService.getInstance()
+const dbFacade = dbService
 
 const findExistingAgentSessionContext = (
   state: RootState,
@@ -123,21 +153,79 @@ const buildAgentBaseURL = (apiServer: ApiServerConfig) => {
   return `${baseHost}${portSegment}`
 }
 
-const renameAgentSessionIfNeeded = async (
-  agentSession: AgentSessionContext,
-  assistant: Assistant,
-  topicId: string,
-  getState: () => RootState
+const getAgentApiServerConfig = async (): Promise<ApiServerConfig | null> => {
+  const { host, port, apiKey } = await preferenceService.getMultiple({
+    host: 'feature.csaas.host',
+    port: 'feature.csaas.port',
+    apiKey: 'feature.csaas.api_key'
+  })
+
+  if (!apiKey) {
+    return null
+  }
+
+  return {
+    enabled: true,
+    host,
+    port,
+    apiKey
+  }
+}
+
+const createAgentApiHeaders = (apiKey: string) => ({
+  Authorization: `Bearer ${apiKey}`,
+  'X-Api-Key': apiKey
+})
+
+const createAgentApiClient = async (): Promise<AgentApiClient | null> => {
+  const apiServer = await getAgentApiServerConfig()
+  if (!apiServer?.apiKey) {
+    return null
+  }
+
+  return new AgentApiClient({
+    baseURL: buildAgentBaseURL(apiServer),
+    headers: createAgentApiHeaders(apiServer.apiKey)
+  })
+}
+
+const updateRenamedAgentSessionCache = async (
+  client: AgentApiClient,
+  agentId: string,
+  updatedSession: GetAgentSessionResponse
 ): Promise<void> => {
+  const paths = client.getSessionPaths(agentId)
+
+  await mutate(paths.withId(updatedSession.id), updatedSession, {
+    revalidate: false
+  })
+
+  await mutate<AgentSessionEntity[]>(
+    paths.base,
+    (prev) =>
+      prev?.map((sessionItem) =>
+        sessionItem.id === updatedSession.id
+          ? ({
+              ...sessionItem,
+              name: updatedSession.name
+            } as AgentSessionEntity)
+          : sessionItem
+      ) ?? prev,
+    {
+      revalidate: false
+    }
+  )
+}
+
+export const renameAgentSessionIfNeeded = async (agentSession: AgentSessionContext, topicId: string): Promise<void> => {
   const lockId = `${agentSession.agentId}:${agentSession.sessionId}`
   if (agentSessionRenameLocks.has(lockId)) {
     return
   }
 
   try {
-    const state = getState()
-    const apiServer = state.settings.apiServer
-    if (!apiServer?.apiKey) {
+    const client = await createAgentApiClient()
+    if (!client) {
       return
     }
 
@@ -146,19 +234,11 @@ const renameAgentSessionIfNeeded = async (
       return
     }
 
-    const summary = await fetchMessagesSummary({ messages, assistant })
+    const { text: summary } = await fetchMessagesSummary({ messages })
     const summaryText = summary?.trim()
     if (!summaryText) {
       return
     }
-
-    const baseURL = buildAgentBaseURL(apiServer)
-    const client = new AgentApiClient({
-      baseURL,
-      headers: {
-        Authorization: `Bearer ${apiServer.apiKey}`
-      }
-    })
 
     agentSessionRenameLocks.add(lockId)
 
@@ -186,25 +266,8 @@ const renameAgentSessionIfNeeded = async (
       return
     }
 
-    const paths = client.getSessionPaths(agentSession.agentId)
-
     try {
-      await mutate(paths.withId(agentSession.sessionId), updatedSession, {
-        revalidate: false
-      })
-
-      await mutate<AgentSessionEntity[]>(
-        paths.base,
-        (prev) =>
-          prev?.map((sessionItem) =>
-            sessionItem.id === updatedSession.id
-              ? ({ ...sessionItem, name: updatedSession.name } as AgentSessionEntity)
-              : sessionItem
-          ) ?? prev,
-        {
-          revalidate: false
-        }
-      )
+      await updateRenamedAgentSessionCache(client, agentSession.agentId, updatedSession)
     } catch (error) {
       logger.warn('Failed to update agent session cache after rename', error as Error)
     }
@@ -228,7 +291,7 @@ const createSSEReadableStream = (
       const cancelReader = (reason?: any) => reader.cancel(reason).catch(() => {})
 
       const abortHandler = () => {
-        cancelReader(signal.reason ?? 'aborted')
+        void cancelReader(signal.reason ?? 'aborted')
         controller.error(new DOMException('Aborted', 'AbortError'))
       }
 
@@ -254,7 +317,7 @@ const createSSEReadableStream = (
 
         if (dataPayload === '[DONE]') {
           signal.removeEventListener('abort', abortHandler)
-          cancelReader()
+          void cancelReader()
           controller.close()
           return true
         }
@@ -312,13 +375,56 @@ const createSSEReadableStream = (
   })
 }
 
+/**
+ * Wraps a parsed stream with abort-signal lifecycle handling.
+ * In the normal chat pipeline the AI SDK runtime converts abort signals into
+ * `{ type: 'abort' }` stream parts. The agent pipeline bypasses the AI SDK
+ * runtime, so this middleware fills that gap — keeping the SSE parser
+ * (transport) and the chunk adapter (protocol) free of lifecycle concerns.
+ */
+const withAbortStreamPart = (
+  source: ReadableStream<TextStreamPart<Record<string, any>>>,
+  signal: AbortSignal
+): ReadableStream<TextStreamPart<Record<string, any>>> => {
+  const reader = source.getReader()
+
+  return new ReadableStream<TextStreamPart<Record<string, any>>>({
+    async pull(controller) {
+      try {
+        const { value, done } = await reader.read()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+      } catch (error) {
+        // When the source errors due to abort, emit the abort stream part
+        // so downstream consumers (AiSdkToChunkAdapter) can fire onError.
+        if (signal.aborted) {
+          try {
+            controller.enqueue({ type: 'abort' } as TextStreamPart<Record<string, any>>)
+          } catch {
+            // Controller may already be closed
+          }
+          controller.close()
+        } else {
+          controller.error(error)
+        }
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    }
+  })
+}
+
 const createAgentMessageStream = async (
-  apiServer: ApiServerConfig,
   agentSession: AgentSessionContext,
   content: string,
   signal: AbortSignal
 ): Promise<ReadableStream<TextStreamPart<Record<string, any>>>> => {
-  if (!apiServer.enabled) {
+  const apiServer = await getAgentApiServerConfig()
+  if (!apiServer) {
     throw new Error('Agent API server is disabled')
   }
 
@@ -328,12 +434,16 @@ const createAgentMessageStream = async (
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiServer.apiKey}`,
+      ...createAgentApiHeaders(apiServer.apiKey),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache'
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({
+      content,
+      ...(agentSession.effort ? { effort: agentSession.effort } : {}),
+      ...(agentSession.thinking ? { thinking: agentSession.thinking } : {})
+    }),
     signal
   })
 
@@ -346,12 +456,13 @@ const createAgentMessageStream = async (
     throw new Error('Agent message stream has no body')
   }
 
-  return createSSEReadableStream(response.body, signal)
+  const sseStream = createSSEReadableStream(response.body, signal)
+  return withAbortStreamPart(sseStream, signal)
 }
 // TODO: 后续可以将db操作移到Listener Middleware中
-export const saveMessageAndBlocksToDB = async (message: Message, blocks: MessageBlock[], messageIndex: number = -1) => {
-  return saveMessageAndBlocksToDBV2(message.topicId, message, blocks, messageIndex)
-}
+// export const saveMessageAndBlocksToDB = async (message: Message, blocks: MessageBlock[], messageIndex: number = -1) => {
+//   return saveMessageAndBlocksToDBV2(message.topicId, message, blocks, messageIndex)
+// }
 
 const updateExistingMessageAndBlocksInDB = async (
   updatedMessage: Partial<Message> & Pick<Message, 'id' | 'topicId'>,
@@ -360,7 +471,7 @@ const updateExistingMessageAndBlocksInDB = async (
   try {
     // Always update blocks if provided
     if (updatedBlocks.length > 0) {
-      await updateBlocksV2(updatedBlocks)
+      await updateBlocks(updatedBlocks)
     }
 
     // Check if there are message properties to update beyond id and topicId
@@ -372,7 +483,7 @@ const updateExistingMessageAndBlocksInDB = async (
         return acc
       }, {})
 
-      await updateMessageV2(updatedMessage.topicId, updatedMessage.id, messageUpdatesPayload)
+      await updateMessage(updatedMessage.topicId, updatedMessage.id, messageUpdatesPayload)
 
       store.dispatch(updateTopicUpdatedAt({ topicId: updatedMessage.topicId }))
     }
@@ -388,7 +499,15 @@ const updateExistingMessageAndBlocksInDB = async (
 const blockUpdateThrottlers = new LRUCache<string, ReturnType<typeof throttle>>({
   max: 100,
   ttl: 1000 * 60 * 5,
-  updateAgeOnGet: true
+  updateAgeOnGet: true,
+  dispose: (throttler, id) => {
+    throttler.cancel()
+    const rafId = blockUpdateRafs.get(id)
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      blockUpdateRafs.delete(id)
+    }
+  }
 })
 
 /**
@@ -398,27 +517,41 @@ const blockUpdateThrottlers = new LRUCache<string, ReturnType<typeof throttle>>(
 const blockUpdateRafs = new LRUCache<string, number>({
   max: 100,
   ttl: 1000 * 60 * 5,
-  updateAgeOnGet: true
+  updateAgeOnGet: true,
+  dispose: (rafId) => {
+    cancelAnimationFrame(rafId)
+  }
 })
 
 /**
- * 获取或创建消息块专用的节流函数。
+ * Get or create a dedicated throttle function for a message block.
+ *
+ * ARCHITECTURE NOTE:
+ * Updated to use StreamingService.updateBlock instead of Redux dispatch.
+ * This is part of the v2 data refactoring to use CacheService + Data API.
+ *
+ * The throttler now:
+ * 1. Uses RAF for visual consistency
+ * 2. Updates StreamingService (memory cache) for immediate reactivity
+ * 3. Removes the DB update (moved to finalize)
  */
 const getBlockThrottler = (id: string) => {
   if (!blockUpdateThrottlers.has(id)) {
-    const throttler = throttle(async (blockUpdate: any) => {
+    const throttler = throttle((blockUpdate: any) => {
       const existingRAF = blockUpdateRafs.get(id)
       if (existingRAF) {
         cancelAnimationFrame(existingRAF)
       }
 
       const rafId = requestAnimationFrame(() => {
-        store.dispatch(updateOneBlock({ id, changes: blockUpdate }))
+        // Update StreamingService instead of Redux store
+        streamingService.updateBlock(id, blockUpdate)
         blockUpdateRafs.delete(id)
       })
 
       blockUpdateRafs.set(id, rafId)
-      await updateSingleBlockV2(id, blockUpdate)
+      // NOTE: DB update removed - persistence happens during finalize()
+      // await updateSingleBlock(id, blockUpdate)
     }, 150)
 
     blockUpdateThrottlers.set(id, throttler)
@@ -474,7 +607,7 @@ export const cleanupMultipleBlocks = (dispatch: AppDispatch, blockIds: string[])
     await Promise.all(files.map((file) => FileManager.deleteFile(file.id, false)))
   }
 
-  getBlocksFiles(blockIds).then(cleanupFiles)
+  void getBlocksFiles(blockIds).then(cleanupFiles)
 
   if (blockIds.length > 0) {
     dispatch(removeManyBlocks(blockIds))
@@ -500,25 +633,26 @@ const saveUpdatesToDB = async (
   }
 }
 
-// 新增: 辅助函数，用于获取并保存单个更新后的 Block 到数据库
-const saveUpdatedBlockToDB = async (
-  blockId: string | null,
-  messageId: string,
-  topicId: string,
-  getState: () => RootState
-) => {
-  if (!blockId) {
-    logger.warn('[DB Save Single Block] Received null/undefined blockId. Skipping save.')
-    return
-  }
-  const state = getState()
-  const blockToSave = state.messageBlocks.entities[blockId]
-  if (blockToSave) {
-    await saveUpdatesToDB(messageId, topicId, {}, [blockToSave]) // Pass messageId, topicId, empty message updates, and the block
-  } else {
-    logger.warn(`[DB Save Single Block] Block ${blockId} not found in state. Cannot save.`)
-  }
-}
+// NOTE: saveUpdatedBlockToDB was removed as part of StreamingService refactoring.
+// Block persistence is now handled by StreamingService.finalize().
+// const saveUpdatedBlockToDB = async (
+//   blockId: string | null,
+//   messageId: string,
+//   topicId: string,
+//   getState: () => RootState
+// ) => {
+//   if (!blockId) {
+//     logger.warn('[DB Save Single Block] Received null/undefined blockId. Skipping save.')
+//     return
+//   }
+//   const state = getState()
+//   const blockToSave = state.messageBlocks.entities[blockId]
+//   if (blockToSave) {
+//     await saveUpdatesToDB(messageId, topicId, {}, [blockToSave]) // Pass messageId, topicId, empty message updates, and the block
+//   } else {
+//     logger.warn(`[DB Save Single Block] Block ${blockId} not found in state. Cannot save.`)
+//   }
+// }
 
 interface AgentStreamParams {
   topicId: string
@@ -537,24 +671,32 @@ const fetchAndProcessAgentResponseImpl = async (
   try {
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
 
+    // Initialize streaming task in StreamingService
+    // NOTE: parentId is used internally; askId in renderer format is derived from parentId
+    streamingService.startTask(topicId, assistantMessage.id, {
+      parentId: userMessageId,
+      siblingsGroupId: 0,
+      role: 'assistant',
+      model: assistant.model,
+      modelId: assistant.model?.id,
+      assistantId: assistant.id,
+      traceId: assistantMessage.traceId,
+      agentSessionId: agentSession.agentSessionId
+    })
+
+    // Create BlockManager with simplified dependencies (no dispatch/getState/saveUpdatesToDB)
     const blockManager = new BlockManager({
-      dispatch,
-      getState,
-      saveUpdatedBlockToDB,
-      saveUpdatesToDB,
       assistantMsgId: assistantMessage.id,
       topicId,
       throttledBlockUpdate,
       cancelThrottledBlockUpdate
     })
 
+    // Create callbacks with simplified dependencies
     callbacks = createCallbacks({
       blockManager,
-      dispatch,
-      getState,
       topicId,
       assistantMsgId: assistantMessage.id,
-      saveUpdatesToDB,
       assistant
     })
 
@@ -570,19 +712,19 @@ const fetchAndProcessAgentResponseImpl = async (
     const abortController = new AbortController()
     addAbortController(userMessageId, () => abortController.abort())
 
-    const stream = await createAgentMessageStream(
-      state.settings.apiServer,
-      agentSession,
-      userContent,
-      abortController.signal
-    )
+    const stream = await createAgentMessageStream(agentSession, userContent, abortController.signal)
 
-    let latestAgentSessionId = ''
+    // Store the previous session ID to detect /clear command
+    let latestAgentSessionId = agentSession.agentSessionId || ''
+    let sessionWasCleared = false
 
     const persistAgentSessionId = async (sessionId: string) => {
       if (!sessionId || sessionId === latestAgentSessionId) {
         return
       }
+
+      // Only mark as cleared if there was a previous session ID (not initial assignment)
+      sessionWasCleared = !!latestAgentSessionId
 
       latestAgentSessionId = sessionId
       agentSession.agentSessionId = sessionId
@@ -625,14 +767,33 @@ const fetchAndProcessAgentResponseImpl = async (
         if (persistTasks.length > 0) {
           await Promise.all(persistTasks)
         }
+
+        // Refresh session data to get updated slash_commands from backend
+        // This happens after the SDK init message updates the session in the database
+        const client = await createAgentApiClient()
+        if (client) {
+          const paths = client.getSessionPaths(agentSession.agentId)
+          await mutate(paths.withId(agentSession.sessionId))
+          logger.info('Refreshed session data after sessionId update', {
+            agentId: agentSession.agentId,
+            sessionId: agentSession.sessionId
+          })
+        }
       } catch (error) {
         logger.error('Failed to persist agent session ID during stream', error as Error)
       }
     }
 
-    const adapter = new AiSdkToChunkAdapter(streamProcessorCallbacks, [], false, false, (sessionId) => {
-      persistAgentSessionId(sessionId)
-    })
+    const adapter = new AiSdkToChunkAdapter(
+      streamProcessorCallbacks,
+      [],
+      false,
+      false,
+      (sessionId) => {
+        void persistAgentSessionId(sessionId)
+      },
+      () => sessionWasCleared // Provide getter for session cleared flag
+    )
 
     await adapter.processStream({
       fullStream: stream,
@@ -643,16 +804,16 @@ const fetchAndProcessAgentResponseImpl = async (
       await persistAgentSessionId(latestAgentSessionId)
     }
 
-    await renameAgentSessionIfNeeded(agentSession, assistant, topicId, getState)
+    await renameAgentSessionIfNeeded(agentSession, topicId)
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAgentResponseImpl:', error)
     try {
       callbacks.onError?.(error)
     } catch (callbackError) {
       logger.error('Error in agent onError callback:', callbackError as Error)
-    } finally {
-      dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
     }
+  } finally {
+    dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
   }
 }
 
@@ -671,74 +832,84 @@ const dispatchMultiModelResponses = async (
   mentionedModels: Model[]
 ) => {
   const assistantMessageStubs: Message[] = []
-  const tasksToQueue: { assistantConfig: Assistant; messageStub: Message }[] = []
+  const tasksToQueue: { assistantConfig: Assistant; messageStub: Message; siblingsGroupId: number }[] = []
+
+  // Generate siblingsGroupId for multi-model responses (all share the same group ID)
+  const siblingsGroupId = mentionedModels.length > 1 ? streamingService.generateNextGroupId(topicId) : 0
 
   for (const mentionedModel of mentionedModels) {
     const assistantForThisMention = { ...assistant, model: mentionedModel }
-    const assistantMessage = createAssistantMessage(assistant.id, topicId, {
-      askId: triggeringMessage.id,
-      model: mentionedModel,
+
+    // Create message via StreamingService
+    const assistantMessage = await streamingService.createAssistantMessage(topicId, {
+      parentId: triggeringMessage.id,
+      assistantId: assistant.id,
       modelId: mentionedModel.id,
-      traceId: triggeringMessage.traceId
+      model: mentionedModel,
+      siblingsGroupId,
+      traceId: triggeringMessage.traceId ?? undefined
     })
+
     dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
     assistantMessageStubs.push(assistantMessage)
-    tasksToQueue.push({ assistantConfig: assistantForThisMention, messageStub: assistantMessage })
+    tasksToQueue.push({
+      assistantConfig: assistantForThisMention,
+      messageStub: assistantMessage,
+      siblingsGroupId
+    })
   }
 
-  const topicFromDB = await db.topics.get(topicId)
-  if (topicFromDB) {
-    const currentTopicMessageIds = getState().messages.messageIdsByTopic[topicId] || []
-    const currentEntities = getState().messages.entities
-    const messagesToSaveInDB = currentTopicMessageIds.map((id) => currentEntities[id]).filter((m): m is Message => !!m)
-    await db.topics.update(topicId, { messages: messagesToSaveInDB })
-  } else {
-    logger.error(`[dispatchMultiModelResponses] Topic ${topicId} not found in DB during multi-model save.`)
-    throw new Error(`Topic ${topicId} not found in DB.`)
-  }
+  // Note: Dexie save removed - messages are now persisted via Data API POST above
+  // const topicFromDB = await db.topics.get(topicId)
+  // if (topicFromDB) {
+  //   const currentTopicMessageIds = getState().messages.messageIdsByTopic[topicId] || []
+  //   const currentEntities = getState().messages.entities
+  //   const messagesToSaveInDB = currentTopicMessageIds.map((id) => currentEntities[id]).filter((m): m is Message => !!m)
+  //   await db.topics.update(topicId, { messages: messagesToSaveInDB })
+  // } else {
+  //   logger.error(`[dispatchMultiModelResponses] Topic ${topicId} not found in DB during multi-model save.`)
+  //   throw new Error(`Topic ${topicId} not found in DB.`)
+  // }
 
   const queue = getTopicQueue(topicId)
   for (const task of tasksToQueue) {
-    queue.add(async () => {
-      await fetchAndProcessAssistantResponseImpl(dispatch, getState, topicId, task.assistantConfig, task.messageStub)
+    void queue.add(async () => {
+      await fetchAndProcessAssistantResponseImpl(
+        dispatch,
+        getState,
+        topicId,
+        task.assistantConfig,
+        task.messageStub,
+        task.siblingsGroupId
+      )
     })
   }
 }
 
 // --- End Helper Function ---
-// 发送和处理助手响应的实现函数，话题提示词在此拼接
+// Send and process assistant response implementation - topic prompts are concatenated here
 const fetchAndProcessAssistantResponseImpl = async (
   dispatch: AppDispatch,
   getState: () => RootState,
   topicId: string,
   origAssistant: Assistant,
-  assistantMessage: Message // Pass the prepared assistant message (new or reset)
+  assistantMessage: Message, // Pass the prepared assistant message (new or reset)
+  siblingsGroupId: number = 0 // Multi-model group ID (0=normal, >0=multi-model response)
 ) => {
   const topic = origAssistant.topics.find((t) => t.id === topicId)
   const assistant = topic?.prompt
     ? { ...origAssistant, prompt: `${origAssistant.prompt}\n${topic.prompt}` }
     : origAssistant
   const assistantMsgId = assistantMessage.id
+  const userMessageId = assistantMessage.askId
   let callbacks: StreamProcessorCallbacks = {}
   try {
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
 
-    // 创建 BlockManager 实例
-    const blockManager = new BlockManager({
-      dispatch,
-      getState,
-      saveUpdatedBlockToDB,
-      saveUpdatesToDB,
-      assistantMsgId,
-      topicId,
-      throttledBlockUpdate,
-      cancelThrottledBlockUpdate
-    })
-
+    // Build context messages first (needed for startTask)
     const allMessagesForTopic = selectMessagesForTopic(getState(), topicId)
 
     let messagesForContext: Message[] = []
-    const userMessageId = assistantMessage.askId
     const userMessageIndex = allMessagesForTopic.findIndex((m) => m?.id === userMessageId)
 
     if (userMessageIndex === -1) {
@@ -765,28 +936,66 @@ const fetchAndProcessAssistantResponseImpl = async (
       }
     }
 
+    // Initialize streaming task in StreamingService (includes context for usage estimation)
+    // NOTE: parentId is used internally; askId in renderer format is derived from parentId
+    streamingService.startTask(topicId, assistantMsgId, {
+      parentId: userMessageId!,
+      siblingsGroupId,
+      role: 'assistant',
+      model: assistant.model,
+      modelId: assistant.model?.id,
+      assistantId: assistant.id,
+      traceId: assistantMessage.traceId,
+      contextMessages: messagesForContext
+    })
+
+    // Create BlockManager with simplified dependencies (no dispatch/getState/saveUpdatesToDB)
+    const blockManager = new BlockManager({
+      assistantMsgId,
+      topicId,
+      throttledBlockUpdate,
+      cancelThrottledBlockUpdate
+    })
+
+    // Create callbacks with simplified dependencies
     callbacks = createCallbacks({
       blockManager,
-      dispatch,
-      getState,
       topicId,
       assistantMsgId,
-      saveUpdatesToDB,
       assistant
     })
     const streamProcessorCallbacks = createStreamProcessor(callbacks)
 
     const abortController = new AbortController()
+    logger.silly('Add Abort Controller', { id: userMessageId })
     addAbortController(userMessageId!, () => abortController.abort())
+
+    // Fetch agent allowed_tools for MCP auto-approval
+    let allowedTools: string[] | undefined
+    const activeAgentId = cacheService.get('agent.active_id') as string | null
+    if (activeAgentId) {
+      try {
+        const agentClient = await createAgentApiClient()
+        if (agentClient) {
+          const agentData = await agentClient.getAgent(activeAgentId)
+          allowedTools = agentData?.allowed_tools
+        }
+      } catch {
+        // Agent fetch failed — proceed without allowedTools
+      }
+    }
 
     await transformMessagesAndFetch(
       {
         messages: messagesForContext,
         assistant,
         topicId,
+        allowedTools,
+        blockManager,
+        assistantMsgId,
+        callbacks,
         options: {
           signal: abortController.signal,
-          timeout: 30000,
           headers: defaultAppHeaders()
         }
       },
@@ -838,15 +1047,28 @@ export const sendMessage =
       if (activeAgentSession) {
         const derivedSession = findExistingAgentSessionContext(stateBeforeSend, topicId, assistant.id)
         if (derivedSession?.agentSessionId && derivedSession.agentSessionId !== activeAgentSession.agentSessionId) {
-          activeAgentSession = { ...activeAgentSession, agentSessionId: derivedSession.agentSessionId }
+          activeAgentSession = {
+            ...activeAgentSession,
+            agentSessionId: derivedSession.agentSessionId
+          }
         }
       }
       if (activeAgentSession?.agentSessionId && !userMessage.agentSessionId) {
         userMessage.agentSessionId = activeAgentSession.agentSessionId
       }
 
-      await saveMessageAndBlocksToDB(userMessage, userMessageBlocks)
-      dispatch(newMessagesActions.addMessage({ topicId, message: userMessage }))
+      let finalUserMessage: Message
+
+      if (activeAgentSession) {
+        // Agent session: keep existing Dexie logic
+        await saveMessageAndBlocksToDB(topicId, userMessage, userMessageBlocks)
+        finalUserMessage = userMessage
+      } else {
+        // Normal topic: use Data API, get server-generated message ID
+        finalUserMessage = await streamingService.createUserMessage(topicId, userMessage, userMessageBlocks)
+      }
+
+      dispatch(newMessagesActions.addMessage({ topicId, message: finalUserMessage }))
       if (userMessageBlocks.length > 0) {
         dispatch(upsertManyBlocks(userMessageBlocks))
       }
@@ -856,40 +1078,49 @@ export const sendMessage =
 
       if (activeAgentSession) {
         const assistantMessage = createAssistantMessage(assistant.id, topicId, {
-          askId: userMessage.id,
+          askId: finalUserMessage.id,
           model: assistant.model,
           traceId: userMessage.traceId
         })
         if (activeAgentSession.agentSessionId && !assistantMessage.agentSessionId) {
           assistantMessage.agentSessionId = activeAgentSession.agentSessionId
         }
-        await saveMessageAndBlocksToDB(assistantMessage, [])
+        await saveMessageAndBlocksToDB(topicId, assistantMessage, [])
         dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
 
-        queue.add(async () => {
+        void queue.add(async () => {
           await fetchAndProcessAgentResponseImpl(dispatch, getState, {
             topicId,
             assistant,
             assistantMessage,
             agentSession: activeAgentSession,
-            userMessageId: userMessage.id
+            userMessageId: finalUserMessage.id
           })
         })
       } else {
-        const mentionedModels = userMessage.mentions
+        const mentionedModels = finalUserMessage.mentions
 
         if (mentionedModels && mentionedModels.length > 0) {
-          await dispatchMultiModelResponses(dispatch, getState, topicId, userMessage, assistant, mentionedModels)
+          await dispatchMultiModelResponses(dispatch, getState, topicId, finalUserMessage, assistant, mentionedModels)
         } else {
-          const assistantMessage = createAssistantMessage(assistant.id, topicId, {
-            askId: userMessage.id,
+          // Create message via StreamingService for normal topics
+          const assistantMessage = await streamingService.createAssistantMessage(topicId, {
+            parentId: finalUserMessage.id,
+            assistantId: assistant.id,
+            modelId: assistant.model?.id,
             model: assistant.model,
-            traceId: userMessage.traceId
+            siblingsGroupId: 0,
+            traceId: finalUserMessage.traceId ?? undefined
           })
-          await saveMessageAndBlocksToDB(assistantMessage, [])
-          dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
+          await saveMessageAndBlocksToDB(topicId, assistantMessage, [])
+          dispatch(
+            newMessagesActions.addMessage({
+              topicId,
+              message: assistantMessage
+            })
+          )
 
-          queue.add(async () => {
+          void queue.add(async () => {
             await fetchAndProcessAssistantResponseImpl(dispatch, getState, topicId, assistant, assistantMessage)
           })
         }
@@ -897,7 +1128,7 @@ export const sendMessage =
     } catch (error) {
       logger.error('Error in sendMessage thunk:', error as Error)
     } finally {
-      finishTopicLoading(topicId)
+      void finishTopicLoading(topicId)
     }
   }
 
@@ -952,11 +1183,11 @@ export const loadAgentSessionMessagesThunk =
  * Loads messages and their blocks for a specific topic from the database
  * and updates the Redux store.
  */
-export const loadTopicMessagesThunk =
-  (topicId: string, forceReload: boolean = false) =>
-  async (dispatch: AppDispatch, getState: () => RootState) => {
-    return loadTopicMessagesThunkV2(topicId, forceReload)(dispatch, getState)
-  }
+// export const loadTopicMessagesThunk =
+//   (topicId: string, forceReload: boolean = false) =>
+//   async (dispatch: AppDispatch, getState: () => RootState) => {
+//     return loadTopicMessagesThunkV2(topicId, forceReload)(dispatch, getState)
+//   }
 
 /**
  * Thunk to delete a single message and its associated blocks.
@@ -975,7 +1206,7 @@ export const deleteSingleMessageThunk =
     try {
       dispatch(newMessagesActions.removeMessage({ topicId, messageId }))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
-      await deleteMessageFromDBV2(topicId, messageId)
+      await deleteMessageFromDB(topicId, messageId)
     } catch (error) {
       logger.error(`[deleteSingleMessage] Failed to delete message ${messageId}:`, error as Error)
     }
@@ -1014,7 +1245,7 @@ export const deleteMessageGroupThunk =
     try {
       dispatch(newMessagesActions.removeMessagesByAskId({ topicId, askId }))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
-      await deleteMessagesFromDBV2(topicId, messageIdsToDelete)
+      await deleteMessagesFromDB(topicId, messageIdsToDelete)
     } catch (error) {
       logger.error(`[deleteMessageGroup] Failed to delete messages with askId ${askId}:`, error as Error)
     }
@@ -1039,7 +1270,7 @@ export const clearTopicMessagesThunk =
 
       dispatch(newMessagesActions.clearTopicMessages(topicId))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
-      await clearMessagesFromDBV2(topicId)
+      await clearMessagesFromDB(topicId)
     } catch (error) {
       logger.error(`[clearTopicMessagesThunk] Failed to clear messages for topic ${topicId}:`, error as Error)
     }
@@ -1066,8 +1297,8 @@ export const resendMessageThunk =
       // Clear cached search results for the user message being resent
       // This ensures that the regenerated responses will not use stale search results
       try {
-        cacheService.delete(`web-search-${userMessageToResend.id}`)
-        cacheService.delete(`knowledge-search-${userMessageToResend.id}`)
+        cacheService.deleteCasual(`web-search-${userMessageToResend.id}`)
+        cacheService.deleteCasual(`knowledge-search-${userMessageToResend.id}`)
       } catch (error) {
         logger.warn(`Failed to clear keyv cache for message ${userMessageToResend.id}:`, error as Error)
       }
@@ -1076,12 +1307,16 @@ export const resendMessageThunk =
 
       if (assistantMessagesToReset.length === 0 && !userMessageToResend?.mentions?.length) {
         // 没有相关的助手消息且没有提及模型时，使用助手模型创建一条消息
-
-        const assistantMessage = createAssistantMessage(assistant.id, topicId, {
-          askId: userMessageToResend.id,
-          model: assistant.model
+        // Create message via StreamingService
+        const assistantMessage = await streamingService.createAssistantMessage(topicId, {
+          parentId: userMessageToResend.id,
+          assistantId: assistant.id,
+          modelId: assistant.model?.id,
+          model: assistant.model,
+          siblingsGroupId: 0,
+          traceId: userMessageToResend.traceId ?? undefined
         })
-        assistantMessage.traceId = userMessageToResend.traceId
+
         resetDataList.push(assistantMessage)
 
         resetDataList.forEach((message) => {
@@ -1091,7 +1326,11 @@ export const resendMessageThunk =
 
       // 处理存在相关的助手消息的情况
       const allBlockIdsToDelete: string[] = []
-      const messagesToUpdateInRedux: { topicId: string; messageId: string; updates: Partial<Message> }[] = []
+      const messagesToUpdateInRedux: {
+        topicId: string
+        messageId: string
+        updates: Partial<Message>
+      }[] = []
 
       // 先处理已有的重传
       for (const originalMsg of assistantMessagesToReset) {
@@ -1108,7 +1347,11 @@ export const resendMessageThunk =
 
         resetDataList.push(resetMsg)
         allBlockIdsToDelete.push(...blockIdsToDelete)
-        messagesToUpdateInRedux.push({ topicId, messageId: resetMsg.id, updates: resetMsg })
+        messagesToUpdateInRedux.push({
+          topicId,
+          messageId: resetMsg.id,
+          updates: resetMsg
+        })
       }
 
       // 再处理新的重传（用户消息提及，但是现有助手消息中不存在提及的模型）
@@ -1116,11 +1359,16 @@ export const resendMessageThunk =
       const mentionedModelSet = new Set(userMessageToResend.mentions ?? [])
       const newModelSet = new Set([...mentionedModelSet].filter((m) => !originModelSet.has(m)))
       for (const model of newModelSet) {
-        const assistantMessage = createAssistantMessage(assistant.id, topicId, {
-          askId: userMessageToResend.id,
-          model: model,
-          modelId: model.id
+        // Create message via StreamingService for new mentioned models
+        const assistantMessage = await streamingService.createAssistantMessage(topicId, {
+          parentId: userMessageToResend.id,
+          assistantId: assistant.id,
+          modelId: model.id,
+          model,
+          siblingsGroupId: 0,
+          traceId: userMessageToResend.traceId ?? undefined
         })
+
         resetDataList.push(assistantMessage)
         dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
       }
@@ -1128,10 +1376,14 @@ export const resendMessageThunk =
       messagesToUpdateInRedux.forEach((update) => dispatch(newMessagesActions.updateMessage(update)))
       cleanupMultipleBlocks(dispatch, allBlockIdsToDelete)
 
+      // Note: Block deletion still uses Dexie for now
+      // TODO: Migrate block deletion to Data API when block endpoints are available
       try {
         if (allBlockIdsToDelete.length > 0) {
           await db.message_blocks.bulkDelete(allBlockIdsToDelete)
         }
+        // Note: Dexie topic update removed for new messages - they are created via Data API
+        // However, existing message updates still need Dexie sync for now
         const finalMessagesToSave = selectMessagesForTopic(getState(), topicId)
         await db.topics.update(topicId, { messages: finalMessagesToSave })
       } catch (dbError) {
@@ -1144,14 +1396,14 @@ export const resendMessageThunk =
           ...assistant,
           ...(resetMsg.model ? { model: resetMsg.model } : {})
         }
-        queue.add(async () => {
+        void queue.add(async () => {
           await fetchAndProcessAssistantResponseImpl(dispatch, getState, topicId, assistantConfigForThisRegen, resetMsg)
         })
       }
     } catch (error) {
       logger.error(`[resendMessageThunk] Error resending user message ${userMessageToResend.id}:`, error as Error)
     } finally {
-      finishTopicLoading(topicId)
+      void finishTopicLoading(topicId)
     }
   }
 
@@ -1163,7 +1415,7 @@ export const resendMessageThunk =
 export const resendUserMessageWithEditThunk =
   (topicId: Topic['id'], originalMessage: Message, assistant: Assistant) => async (dispatch: AppDispatch) => {
     // Trigger the regeneration logic for associated assistant messages
-    dispatch(resendMessageThunk(topicId, originalMessage, assistant))
+    void dispatch(resendMessageThunk(topicId, originalMessage, assistant))
   }
 
 /**
@@ -1266,7 +1518,7 @@ export const regenerateAssistantResponseThunk =
         ...assistant,
         ...(resetAssistantMsg.model ? { model: resetAssistantMsg.model } : {})
       }
-      queue.add(async () => {
+      void queue.add(async () => {
         await fetchAndProcessAssistantResponseImpl(
           dispatch,
           getState,
@@ -1282,7 +1534,7 @@ export const regenerateAssistantResponseThunk =
       )
       // dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
     } finally {
-      finishTopicLoading(topicId)
+      void finishTopicLoading(topicId)
     }
   }
 
@@ -1360,7 +1612,7 @@ export const updateTranslationBlockThunk =
       // 更新Redux状态
       dispatch(updateOneBlock({ id: blockId, changes }))
 
-      await updateSingleBlockV2(blockId, changes)
+      await updateSingleBlock(blockId, changes)
       // Logger.log(`[updateTranslationBlockThunk] Successfully updated translation block ${blockId}.`)
     } catch (error) {
       logger.error(`[updateTranslationBlockThunk] Failed to update translation block ${blockId}:`, error as Error)
@@ -1417,12 +1669,14 @@ export const appendAssistantResponseThunk =
         return
       }
 
-      // 2. Create the new assistant message stub
-      const newAssistantStub = createAssistantMessage(assistant.id, topicId, {
-        askId: askId, // Crucial: Use the original askId
-        model: newModel,
+      // 2. Create the new assistant message via StreamingService
+      const newAssistantMessageStub = await streamingService.createAssistantMessage(topicId, {
+        parentId: askId, // Crucial: Use the original askId
+        assistantId: assistant.id,
         modelId: newModel.id,
-        traceId: traceId
+        model: newModel,
+        siblingsGroupId: 0,
+        traceId: traceId ?? undefined
       })
 
       // 3. Update Redux Store
@@ -1430,10 +1684,19 @@ export const appendAssistantResponseThunk =
       const existingMessageIndex = currentTopicMessageIds.findIndex((id) => id === existingAssistantMessageId)
       const insertAtIndex = existingMessageIndex !== -1 ? existingMessageIndex + 1 : currentTopicMessageIds.length
 
-      // 4. Update Database (Save the stub to the topic's message list)
-      await saveMessageAndBlocksToDB(newAssistantStub, [], insertAtIndex)
+      // 4. Message already saved via Data API POST above
+      // await saveMessageAndBlocksToDB(topicId, newAssistantMessageStub, [], insertAtIndex)
 
-      dispatch(newMessagesActions.insertMessageAtIndex({ topicId, message: newAssistantStub, index: insertAtIndex }))
+      dispatch(
+        newMessagesActions.insertMessageAtIndex({
+          topicId,
+          message: newAssistantMessageStub,
+          index: insertAtIndex
+        })
+      )
+
+      void dispatch(updateMessageAndBlocksThunk(topicId, { id: existingAssistantMessageId, foldSelected: false }, []))
+      void dispatch(updateMessageAndBlocksThunk(topicId, { id: newAssistantMessageStub.id, foldSelected: true }, []))
 
       // 5. Prepare and queue the processing task
       const assistantConfigForThisCall = {
@@ -1441,13 +1704,13 @@ export const appendAssistantResponseThunk =
         model: newModel
       }
       const queue = getTopicQueue(topicId)
-      queue.add(async () => {
+      void queue.add(async () => {
         await fetchAndProcessAssistantResponseImpl(
           dispatch,
           getState,
           topicId,
           assistantConfigForThisCall,
-          newAssistantStub // Pass the newly created stub
+          newAssistantMessageStub // Pass the newly created stub
         )
       })
     } catch (error) {
@@ -1455,7 +1718,7 @@ export const appendAssistantResponseThunk =
       // Optionally dispatch an error action or notification
       // Resetting loading state should be handled by the underlying fetchAndProcessAssistantResponseImpl
     } finally {
-      finishTopicLoading(topicId)
+      void finishTopicLoading(topicId)
     }
   }
 
@@ -1578,17 +1841,22 @@ export const cloneMessagesToNewTopicThunk =
 
         // Add the NEW blocks
         if (clonedBlocks.length > 0) {
-          await bulkAddBlocksV2(clonedBlocks)
+          await bulkAddBlocks(clonedBlocks)
         }
         // Update file counts
         const uniqueFiles = [...new Map(filesToUpdateCount.map((f) => [f.id, f])).values()]
         for (const file of uniqueFiles) {
-          await updateFileCountV2(file.id, 1, false)
+          await updateFileCount(file.id, 1, false)
         }
       })
 
       // --- Update Redux State ---
-      dispatch(newMessagesActions.messagesReceived({ topicId: newTopic.id, messages: clonedMessages }))
+      dispatch(
+        newMessagesActions.messagesReceived({
+          topicId: newTopic.id,
+          messages: clonedMessages
+        })
+      )
       if (clonedBlocks.length > 0) {
         dispatch(upsertManyBlocks(clonedBlocks))
       }
@@ -1628,7 +1896,13 @@ export const updateMessageAndBlocksThunk =
 
         // Only dispatch message update if there are actual changes beyond the ID
         if (Object.keys(actualMessageChanges).length > 0) {
-          dispatch(newMessagesActions.updateMessage({ topicId, messageId, updates: actualMessageChanges }))
+          dispatch(
+            newMessagesActions.updateMessage({
+              topicId,
+              messageId,
+              updates: actualMessageChanges
+            })
+          )
         }
       }
 
@@ -1637,11 +1911,11 @@ export const updateMessageAndBlocksThunk =
       }
       // Update message properties if provided
       if (messageUpdates && Object.keys(messageUpdates).length > 0 && messageId) {
-        await updateMessageV2(topicId, messageId, messageUpdates)
+        await updateMessage(topicId, messageId, messageUpdates)
       }
       // Update blocks if provided
       if (blockUpdatesList.length > 0) {
-        await updateBlocksV2(blockUpdatesList)
+        await updateBlocks(blockUpdatesList)
       }
 
       dispatch(updateTopicUpdatedAt({ topicId }))
@@ -1654,7 +1928,7 @@ export const removeBlocksThunk =
   (topicId: string, messageId: string, blockIdsToRemove: string[]) =>
   async (dispatch: AppDispatch, getState: () => RootState): Promise<void> => {
     if (!blockIdsToRemove.length) {
-      logger.warn('[removeBlocksFromMessageThunk] No block IDs provided to remove.')
+      logger.warn('[removeBlocksThunk] No block IDs provided to remove.')
       return
     }
 
@@ -1663,7 +1937,7 @@ export const removeBlocksThunk =
       const message = state.messages.entities[messageId]
 
       if (!message) {
-        logger.error(`[removeBlocksFromMessageThunk] Message ${messageId} not found in state.`)
+        logger.error(`[removeBlocksThunk] Message ${messageId} not found in state.`)
         return
       }
       const blockIdsToRemoveSet = new Set(blockIdsToRemove)
@@ -1671,27 +1945,394 @@ export const removeBlocksThunk =
       const updatedBlockIds = (message.blocks || []).filter((id) => !blockIdsToRemoveSet.has(id))
 
       // 1. Update Redux state
-      dispatch(newMessagesActions.updateMessage({ topicId, messageId, updates: { blocks: updatedBlockIds } }))
-
+      dispatch(
+        newMessagesActions.updateMessage({
+          topicId,
+          messageId,
+          updates: { blocks: updatedBlockIds }
+        })
+      )
       cleanupMultipleBlocks(dispatch, blockIdsToRemove)
 
-      const finalMessagesToSave = selectMessagesForTopic(getState(), topicId)
-
-      // 2. Update database (in a transaction)
-      await db.transaction('rw', db.topics, db.message_blocks, async () => {
-        // Update the message in the topic
-        await db.topics.update(topicId, { messages: finalMessagesToSave })
-        // Delete the blocks from the database
-        if (blockIdsToRemove.length > 0) {
-          await db.message_blocks.bulkDelete(blockIdsToRemove)
-        }
-      })
+      // 2. Update database - different handling for agent vs Dexie topics
+      if (isAgentSessionTopicId(topicId)) {
+        // For agent topics: dbService.updateMessage routes to AgentMessageDataSource
+        await dbService.updateMessage(topicId, messageId, {
+          blocks: updatedBlockIds
+        })
+      } else {
+        // For Dexie topics: use transaction for atomicity
+        const finalMessagesToSave = selectMessagesForTopic(getState(), topicId)
+        await db.transaction('rw', db.topics, db.message_blocks, async () => {
+          await db.topics.update(topicId, { messages: finalMessagesToSave })
+          if (blockIdsToRemove.length > 0) {
+            await db.message_blocks.bulkDelete(blockIdsToRemove)
+          }
+        })
+      }
 
       dispatch(updateTopicUpdatedAt({ topicId }))
-
-      return
     } catch (error) {
-      logger.error(`[removeBlocksFromMessageThunk] Failed to remove blocks from message ${messageId}:`, error as Error)
+      logger.error(`[removeBlocksThunk] Failed to remove blocks from message ${messageId}:`, error as Error)
       throw error
     }
   }
+
+//以下内容从原 messageThunk.v2.ts 迁移过来，原文件已经删除
+//原因：v2.ts并不是v2数据重构的一部分，而相关命名对v2重构造成重大误解，故两文件合并，以消除误解
+
+/**
+ * Load messages for a topic using unified DbService
+ */
+export const loadTopicMessagesThunk =
+  (topicId: string, forceReload: boolean = false) =>
+  async (dispatch: AppDispatch, getState: () => RootState) => {
+    const state = getState()
+
+    dispatch(newMessagesActions.setCurrentTopicId(topicId))
+
+    // Skip if already cached and not forcing reload
+    if (!forceReload && state.messages.messageIdsByTopic[topicId]) {
+      return
+    }
+
+    try {
+      dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
+
+      // Unified call - no need to check isAgentSessionTopicId
+      const { messages, blocks } = await dbService.fetchMessages(topicId)
+
+      logger.silly('Loaded messages via DbService', {
+        topicId,
+        messageCount: messages.length,
+        blockCount: blocks.length
+      })
+
+      // Update Redux state with fetched data
+      if (blocks.length > 0) {
+        dispatch(upsertManyBlocks(blocks))
+      }
+      dispatch(newMessagesActions.messagesReceived({ topicId, messages }))
+    } catch (error) {
+      logger.error(`Failed to load messages for topic ${topicId}:`, error as Error)
+      // Could dispatch an error action here if needed
+    } finally {
+      dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
+    }
+  }
+
+/**
+ * Get raw topic data using unified DbService
+ * Returns topic with messages array
+ */
+export const getRawTopic = async (topicId: string): Promise<{ id: string; messages: Message[] } | undefined> => {
+  try {
+    const rawTopic = await dbService.getRawTopic(topicId)
+    logger.silly('Retrieved raw topic via DbService', {
+      topicId,
+      found: !!rawTopic
+    })
+    return rawTopic
+  } catch (error) {
+    logger.error('Failed to get raw topic:', { topicId, error })
+    return undefined
+  }
+}
+
+/**
+ * Update file reference count
+ * Only applies to Dexie data source, no-op for agent sessions
+ */
+export const updateFileCount = async (fileId: string, delta: number, deleteIfZero: boolean = false): Promise<void> => {
+  try {
+    // Pass all parameters to dbService, including deleteIfZero
+    await dbService.updateFileCount(fileId, delta, deleteIfZero)
+    logger.silly('Updated file count', { fileId, delta, deleteIfZero })
+  } catch (error) {
+    logger.error('Failed to update file count:', { fileId, delta, error })
+    throw error
+  }
+}
+
+/**
+ * Delete a single message from database
+ */
+export const deleteMessageFromDB = async (topicId: string, messageId: string): Promise<void> => {
+  try {
+    await dbService.deleteMessage(topicId, messageId)
+    logger.silly('Deleted message via DbService', { topicId, messageId })
+  } catch (error) {
+    logger.error('Failed to delete message:', { topicId, messageId, error })
+    throw error
+  }
+}
+
+/**
+ * Delete multiple messages from database
+ */
+export const deleteMessagesFromDB = async (topicId: string, messageIds: string[]): Promise<void> => {
+  try {
+    await dbService.deleteMessages(topicId, messageIds)
+    logger.silly('Deleted messages via DbService', {
+      topicId,
+      count: messageIds.length
+    })
+  } catch (error) {
+    logger.error('Failed to delete messages:', { topicId, messageIds, error })
+    throw error
+  }
+}
+
+/**
+ * Clear all messages from a topic
+ */
+export const clearMessagesFromDB = async (topicId: string): Promise<void> => {
+  try {
+    await dbService.clearMessages(topicId)
+    logger.silly('Cleared all messages via DbService', { topicId })
+  } catch (error) {
+    logger.error('Failed to clear messages:', { topicId, error })
+    throw error
+  }
+}
+
+/**
+ * Save a message and its blocks to database
+ * Uses unified interface, no need for isAgentSessionTopicId check
+ */
+export const saveMessageAndBlocksToDB = async (
+  topicId: string,
+  message: Message,
+  blocks: MessageBlock[],
+  messageIndex: number = -1
+): Promise<void> => {
+  try {
+    const blockIds = blocks.map((block) => block.id)
+    const shouldSyncBlocks =
+      blockIds.length > 0 && (!message.blocks || blockIds.some((id, index) => message.blocks?.[index] !== id))
+
+    const messageWithBlocks = shouldSyncBlocks ? { ...message, blocks: blockIds } : message
+    // Direct call without conditional logic, now with messageIndex
+    await dbService.appendMessage(topicId, messageWithBlocks, blocks, messageIndex)
+    logger.silly('Saved message and blocks via DbService', {
+      topicId,
+      messageId: message.id,
+      blockCount: blocks.length,
+      messageIndex
+    })
+  } catch (error) {
+    logger.error('Failed to save message and blocks:', {
+      topicId,
+      messageId: message.id,
+      error
+    })
+    throw error
+  }
+}
+
+/**
+ * Update a message in the database
+ */
+export const updateMessage = async (topicId: string, messageId: string, updates: Partial<Message>): Promise<void> => {
+  try {
+    await dbService.updateMessage(topicId, messageId, updates)
+    logger.silly('Updated message via DbService', { topicId, messageId })
+  } catch (error) {
+    logger.error('Failed to update message:', { topicId, messageId, error })
+    throw error
+  }
+}
+
+/**
+ * Update a single message block
+ */
+export const updateSingleBlock = async (blockId: string, updates: Partial<MessageBlock>): Promise<void> => {
+  try {
+    await dbService.updateSingleBlock(blockId, updates)
+    logger.silly('Updated single block via DbService', { blockId })
+  } catch (error) {
+    logger.error('Failed to update single block:', { blockId, error })
+    throw error
+  }
+}
+
+/**
+ * Bulk add message blocks (for new blocks)
+ */
+export const bulkAddBlocks = async (blocks: MessageBlock[]): Promise<void> => {
+  try {
+    await dbService.bulkAddBlocks(blocks)
+    logger.silly('Bulk added blocks via DbService', { count: blocks.length })
+  } catch (error) {
+    logger.error('Failed to bulk add blocks:', { count: blocks.length, error })
+    throw error
+  }
+}
+
+/**
+ * Update multiple message blocks (upsert operation)
+ */
+export const updateBlocks = async (blocks: MessageBlock[]): Promise<void> => {
+  try {
+    await dbService.updateBlocks(blocks)
+    logger.silly('Updated blocks via DbService', { count: blocks.length })
+  } catch (error) {
+    logger.error('Failed to update blocks:', { count: blocks.length, error })
+    throw error
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IM Channel stream rendering
+// ---------------------------------------------------------------------------
+// Reuses the same BlockManager + AiSdkToChunkAdapter pipeline used for SSE
+// streaming. IPC chunks are wrapped into a ReadableStream and fed into the
+// existing stream processing infrastructure.
+//
+// Persistence is handled by the same saveUpdatesToDB / saveUpdatedBlockToDB
+// functions used for normal agent messages (writes to SQLite via
+// AgentMessageDataSource). When the renderer is watching, the backend skips
+// its own persistHeadlessExchange to avoid duplicate writes.
+// ---------------------------------------------------------------------------
+
+export type ChannelStreamController = {
+  pushChunk: (chunk: TextStreamPart<Record<string, any>>) => void
+  complete: () => void
+  error: (err: Error) => void
+  assistantMessageId: string
+}
+
+/**
+ * Dispatches an IM channel user message to Redux and persists to DB.
+ * Call this BEFORE setupChannelStream so the user message appears first.
+ */
+export const addChannelUserMessage = (
+  dispatch: AppDispatch,
+  topicId: string,
+  agentId: string,
+  text: string,
+  images?: Array<{ data: string; media_type: string }>
+) => {
+  const now = new Date().toISOString()
+  const userMsgId = uuid()
+  const blockId = uuid()
+
+  const allBlocks: MessageBlock[] = [
+    {
+      id: blockId,
+      messageId: userMsgId,
+      type: MessageBlockType.MAIN_TEXT,
+      content: text,
+      status: MessageBlockStatus.SUCCESS,
+      createdAt: now
+    }
+  ]
+
+  if (images && images.length > 0) {
+    for (const img of images) {
+      allBlocks.push({
+        id: uuid(),
+        messageId: userMsgId,
+        type: MessageBlockType.IMAGE,
+        url: `data:${img.media_type};base64,${img.data}`,
+        status: MessageBlockStatus.SUCCESS,
+        createdAt: now
+      } as MessageBlock)
+    }
+  }
+
+  const userMessage: Message = {
+    id: userMsgId,
+    role: 'user',
+    assistantId: agentId,
+    topicId,
+    createdAt: now,
+    status: UserMessageStatus.SUCCESS,
+    blocks: allBlocks.map((b) => b.id)
+  }
+
+  for (const block of allBlocks) {
+    dispatch(upsertOneBlock(block))
+  }
+  dispatch(newMessagesActions.addMessage({ topicId, message: userMessage }))
+
+  dbService.appendMessage(topicId, userMessage, allBlocks).catch((err) => {
+    logger.error('Failed to persist channel user message', err as Error)
+  })
+}
+
+/**
+ * Sets up the streaming pipeline for rendering IM channel responses in real-time.
+ * Creates the assistant message immediately — call addChannelUserMessage first
+ * to ensure correct message ordering.
+ */
+export const setupChannelStream = (
+  dispatch: AppDispatch,
+  topicId: string,
+  agentId: string,
+  modelId?: string
+): ChannelStreamController => {
+  const model: Model | undefined =
+    (modelId ? getModel(modelId) : undefined) ??
+    (modelId ? { id: modelId, provider: '', name: '', group: '' } : undefined)
+  const assistantMessage = createAssistantMessage(agentId, topicId, {
+    ...(model ? { modelId: model.id, model } : {})
+  })
+  dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
+  dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
+  dbService.appendMessage(topicId, assistantMessage, []).catch((err) => {
+    logger.error('Failed to persist initial channel assistant message', err as Error)
+  })
+
+  let streamController: ReadableStreamDefaultController<TextStreamPart<Record<string, any>>> | null = null
+  const stream = new ReadableStream<TextStreamPart<Record<string, any>>>({
+    start(controller) {
+      streamController = controller
+    }
+  })
+
+  const assistant: Assistant = { id: agentId, name: '', prompt: '', topics: [], type: 'claude-code', model }
+
+  const blockManager = new BlockManager({
+    assistantMsgId: assistantMessage.id,
+    topicId,
+    throttledBlockUpdate,
+    cancelThrottledBlockUpdate
+  })
+
+  const callbacks = createCallbacks({
+    blockManager,
+    topicId,
+    assistantMsgId: assistantMessage.id,
+    assistant
+  })
+
+  const streamProcessorCallbacks = createStreamProcessor(callbacks)
+  streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
+
+  const adapter = new AiSdkToChunkAdapter(streamProcessorCallbacks, [], false, false)
+  adapter
+    .processStream({
+      fullStream: stream,
+      text: Promise.resolve('')
+    })
+    .catch((err) => {
+      logger.error('Channel stream processing failed', err as Error)
+    })
+    .finally(() => {
+      dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
+    })
+
+  return {
+    assistantMessageId: assistantMessage.id,
+    pushChunk(chunk: TextStreamPart<Record<string, any>>) {
+      streamController?.enqueue(chunk)
+    },
+    complete() {
+      streamController?.close()
+    },
+    error(err: Error) {
+      streamController?.error(err)
+    }
+  }
+}

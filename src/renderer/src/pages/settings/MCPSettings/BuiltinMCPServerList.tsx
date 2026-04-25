@@ -1,9 +1,8 @@
 import { CheckOutlined, PlusOutlined } from '@ant-design/icons'
-import { Button } from '@cherrystudio/ui'
 import { useMCPServers } from '@renderer/hooks/useMCPServers'
 import { getBuiltInMcpServerDescriptionLabel, getMcpTypeLabel } from '@renderer/i18n/label'
 import { builtinMCPServers } from '@renderer/store/mcp'
-import { Popover, Tag } from 'antd'
+import { Button, Popover, Tag } from 'antd'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -16,7 +15,7 @@ const BuiltinMCPServerList: FC = () => {
 
   return (
     <>
-      <SettingTitle style={{ marginBottom: 10 }}>{t('settings.mcp.builtinServers')}</SettingTitle>
+      <SettingTitle style={{ gap: 3, marginBottom: 10 }}>{t('settings.mcp.builtinServers')}</SettingTitle>
       <ServersGrid>
         {builtinMCPServers.map((server) => {
           const isInstalled = mcpServers.some((existingServer) => existingServer.name === server.name)
@@ -29,19 +28,23 @@ const BuiltinMCPServerList: FC = () => {
                 </ServerName>
                 <StatusIndicator>
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => {
+                    type="text"
+                    icon={isInstalled ? <CheckOutlined style={{ color: 'var(--color-primary)' }} /> : <PlusOutlined />}
+                    size="small"
+                    onClick={async () => {
                       if (isInstalled) {
                         return
                       }
 
-                      addMCPServer(server)
-                      window.toast.success(t('settings.mcp.addSuccess'))
+                      try {
+                        await addMCPServer(server)
+                        window.toast.success(t('settings.mcp.addSuccess'))
+                      } catch {
+                        window.toast.error(t('settings.mcp.addError'))
+                      }
                     }}
-                    disabled={isInstalled}>
-                    {isInstalled ? <CheckOutlined style={{ color: 'var(--color-primary)' }} /> : <PlusOutlined />}
-                  </Button>
+                    disabled={isInstalled}
+                  />
                 </StatusIndicator>
               </ServerHeader>
               <Popover
@@ -62,9 +65,14 @@ const BuiltinMCPServerList: FC = () => {
                   {getMcpTypeLabel(server.type ?? 'stdio')}
                 </Tag>
                 {server?.shouldConfig && (
-                  <Tag color="warning" style={{ borderRadius: 20, margin: 0, fontWeight: 500 }}>
-                    {t('settings.mcp.requiresConfig')}
-                  </Tag>
+                  <a
+                    href="https://docs.cherry-ai.com/advanced-basic/mcp/buildin"
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    <Tag color="warning" style={{ borderRadius: 20, margin: 0, fontWeight: 500 }}>
+                      {t('settings.mcp.requiresConfig')}
+                    </Tag>
+                  </a>
                 )}
               </ServerFooter>
             </ServerCard>

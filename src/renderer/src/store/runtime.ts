@@ -1,44 +1,55 @@
 /**
- * Data Refactor, notes by fullex
- * //TODO @deprecated this file will be removed
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
  */
-
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
-import type { Topic, WebSearchStatus } from '@renderer/types'
-import type { UpdateInfo } from 'builder-util-runtime'
+import type { MinAppRegion } from '@renderer/types'
 
-export interface ChatState {
-  isMultiSelectMode: boolean
-  selectedMessageIds: string[]
-  activeTopic: Topic | null
-  /** UI state. null represents no active agent */
-  activeAgentId: string | null
-  /** UI state. Map agent id to active session id.
-   *  null represents no active session  */
-  activeSessionIdMap: Record<string, string | null>
-  /** meanwhile active Assistants or Agents */
-  activeTopicOrSession: 'topic' | 'session'
-  /** topic ids that are currently being renamed */
-  renamingTopics: string[]
-  /** topic ids that are newly renamed */
-  newlyRenamedTopics: string[]
-  /** is a session waiting for updating/deleting. undefined and false share same semantics.  */
-  sessionWaiting: Record<string, boolean>
-}
+// export interface ChatState {
+//   isMultiSelectMode: boolean
+//   selectedMessageIds: string[]
+//   activeTopic: Topic | null
+//   /** UI state. null represents no active agent */
+//   activeAgentId: string | null
+//   /** UI state. Map agent id to active session id.
+//    *  null represents no active session  */
+//   activeSessionIdMap: Record<string, string | null>
+//   /** meanwhile active Assistants or Agents */
+//   activeTopicOrSession: 'topic' | 'session'
+//   /** topic ids that are currently being renamed */
+//   renamingTopics: string[]
+//   /** topic ids that are newly renamed */
+//   newlyRenamedTopics: string[]
+// }
 
-export interface WebSearchState {
-  activeSearches: Record<string, WebSearchStatus>
-}
+// export interface WebSearchState {
+//   activeSearches: Record<string, WebSearchStatus>
+// }
 
-export interface UpdateState {
-  info: UpdateInfo | null
-  checking: boolean
-  downloading: boolean
-  downloaded: boolean
-  downloadProgress: number
-  available: boolean
-}
+// export interface UpdateState {
+//   info: UpdateInfo | null
+//   checking: boolean
+//   downloading: boolean
+//   downloaded: boolean
+//   downloadProgress: number
+//   available: boolean
+//   ignore: boolean
+//   /** Whether the update check was manually triggered by user clicking the button */
+//   manualCheck: boolean
+// }
 
 export interface RuntimeState {
   // avatar: string
@@ -58,14 +69,21 @@ export interface RuntimeState {
   // resourcesPath: string
   // update: UpdateState
   // export: ExportState
-  chat: ChatState
+  // chat: ChatState
   // websearch: WebSearchState
-  iknow: Record<string, boolean>
+  /** Detected region from IP lookup (not persisted, re-detected on each app start) */
+  detectedRegion: MinAppRegion | null
+  /** Query whether a task is processing or not. undefined and false share same semantics.  */
+  loadingMap: Record<string, boolean>
+  // Migrated from useApiServer, it's global state now
+  /** Is the api server running */
+  apiServerRunning: boolean
+  placeHolder: string
 }
 
-export interface ExportState {
-  isExporting: boolean
-}
+// export interface ExportState {
+//   isExporting: boolean
+// }
 
 const initialState: RuntimeState = {
   // avatar: UserAvatar,
@@ -84,26 +102,32 @@ const initialState: RuntimeState = {
   //   downloading: false,
   //   downloaded: false,
   //   downloadProgress: 0,
-  //   available: false
+  //   available: false,
+  //  ignore: false,
+  //  manualCheck: false
+  // ignore: false
   // },
   // export: {
   //   isExporting: false
   // },
-  chat: {
-    isMultiSelectMode: false,
-    selectedMessageIds: [],
-    activeTopic: null,
-    activeAgentId: null,
-    activeTopicOrSession: 'topic',
-    activeSessionIdMap: {},
-    renamingTopics: [],
-    newlyRenamedTopics: [],
-    sessionWaiting: {}
-  },
+  // chat: {
+  //   isMultiSelectMode: false,
+  //   selectedMessageIds: [],
+  //   activeTopic: null,
+  //   activeAgentId: null,
+  //   activeTopicOrSession: 'topic',
+  //   activeSessionIdMap: {},
+  //   renamingTopics: [],
+  //   newlyRenamedTopics: [],
+  //   sessionWaiting: {}
+  // }
   // websearch: {
   //   activeSearches: {}
   // },
-  iknow: {}
+  detectedRegion: null,
+  loadingMap: {},
+  apiServerRunning: false,
+  placeHolder: ''
 }
 
 const runtimeSlice = createSlice({
@@ -163,16 +187,16 @@ const runtimeSlice = createSlice({
     // @ts-ignore ts2589 false positive
     //   state.chat.activeTopic = action.payload
     // },
-    setActiveAgentId: (state, action: PayloadAction<string | null>) => {
-      state.chat.activeAgentId = action.payload
-    },
-    setActiveSessionIdAction: (state, action: PayloadAction<{ agentId: string; sessionId: string | null }>) => {
-      const { agentId, sessionId } = action.payload
-      state.chat.activeSessionIdMap[agentId] = sessionId
-    },
-    setActiveTopicOrSessionAction: (state, action: PayloadAction<'topic' | 'session'>) => {
-      state.chat.activeTopicOrSession = action.payload
-    },
+    // setActiveAgentId: (state, action: PayloadAction<string | null>) => {
+    //   state.chat.activeAgentId = action.payload
+    // },
+    // setActiveSessionIdAction: (state, action: PayloadAction<{ agentId: string; sessionId: string | null }>) => {
+    //   const { agentId, sessionId } = action.payload
+    //   state.chat.activeSessionIdMap[agentId] = sessionId
+    // },
+    // setActiveTopicOrSessionAction: (state, action: PayloadAction<'topic' | 'session'>) => {
+    //   state.chat.activeTopicOrSession = action.payload
+    // },
     // setRenamingTopics: (state, action: PayloadAction<string[]>) => {
     //   state.chat.renamingTopics = action.payload
     // },
@@ -190,13 +214,22 @@ const runtimeSlice = createSlice({
     //   }
     //   state.websearch.activeSearches[requestId] = status
     // },
-    // setPlaceholder: (state, action: PayloadAction<Partial<RuntimeState>>) => {},
-    addIknowAction: (state, action: PayloadAction<string>) => {
-      state.iknow[action.payload] = true
+    startLoadingAction: (state, action: PayloadAction<{ id: string }>) => {
+      const { id } = action.payload
+      state.loadingMap[id] = true
     },
-    setSessionWaitingAction: (state, action: PayloadAction<{ id: string; value: boolean }>) => {
-      const { id, value } = action.payload
-      state.chat.sessionWaiting[id] = value
+    finishLoadingAction: (state, action: PayloadAction<{ id: string }>) => {
+      const { id } = action.payload
+      delete state.loadingMap[id]
+    },
+    setDetectedRegion: (state, action: PayloadAction<MinAppRegion | null>) => {
+      state.detectedRegion = action.payload
+    },
+    setApiServerRunningAction: (state, action: PayloadAction<boolean>) => {
+      state.apiServerRunning = action.payload
+    },
+    setPlaceholder: (state, action: PayloadAction<string>) => {
+      state.placeHolder = action.payload
     }
   }
 })
@@ -215,21 +248,24 @@ export const {
   // setResourcesPath,
   // setUpdateState,
   // setExportState,
-  addIknowAction,
   // // Chat related actions
   // toggleMultiSelectMode,
   // setSelectedMessageIds,
   // setActiveTopic,
-  setActiveAgentId,
-  setActiveSessionIdAction,
-  setActiveTopicOrSessionAction,
+  // setActiveAgentId,
+  // setActiveSessionIdAction,
+  // setActiveTopicOrSessionAction,
   // setRenamingTopics,
   // setNewlyRenamedTopics,
-  setSessionWaitingAction
+  startLoadingAction,
+  finishLoadingAction,
   // // WebSearch related actions
   // setActiveSearches,
   // setWebSearchStatus,
-  // setPlaceholder
+  setPlaceholder,
+  // Region detection
+  setDetectedRegion,
+  setApiServerRunningAction
 } = runtimeSlice.actions
 
 export default runtimeSlice.reducer

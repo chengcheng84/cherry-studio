@@ -11,7 +11,7 @@ const logger = loggerService.withContext('Utils')
  * @param {() => void} fn 要执行的函数
  * @returns {Promise<void>} 执行结果
  */
-export const runAsyncFunction = async (fn: () => void): Promise<void> => {
+export const runAsyncFunction = async (fn: () => Promise<void>): Promise<void> => {
   await fn()
 }
 
@@ -220,6 +220,7 @@ export function uniqueObjectArray<T>(array: T[]): T[] {
 export * from './api'
 export * from './collection'
 export * from './dataLimit'
+export * from './dom'
 export * from './file'
 export * from './image'
 export * from './json'

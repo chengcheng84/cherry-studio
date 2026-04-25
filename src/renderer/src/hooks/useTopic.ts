@@ -1,24 +1,28 @@
 import { cacheService } from '@data/CacheService'
 import { preferenceService } from '@data/PreferenceService'
+import { loggerService } from '@logger'
 import db from '@renderer/databases'
 import i18n from '@renderer/i18n'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
-import { deleteMessageFiles } from '@renderer/services/MessagesService'
+import { safeDeleteFiles } from '@renderer/services/MessagesService'
 import store from '@renderer/store'
 import { updateTopic } from '@renderer/store/assistants'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
-import type { Assistant, Topic } from '@renderer/types'
+import type { Assistant, FileMetadata, Topic } from '@renderer/types'
+import type { FileMessageBlock, ImageMessageBlock } from '@renderer/types/newMessage'
+import { MessageBlockType } from '@renderer/types/newMessage'
 import { findMainTextBlocks } from '@renderer/utils/messageUtils/find'
+import { truncateText } from '@renderer/utils/naming'
 import { find, isEmpty } from 'lodash'
-import { useEffect, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 
 import { useAssistant } from './useAssistant'
 
 let _activeTopic: Topic
-let _setActiveTopic: (topic: Topic) => void
+let _setActiveTopic: Dispatch<SetStateAction<Topic>>
 
-// const logger = loggerService.withContext('useTopic')
+const logger = loggerService.withContext('useTopic')
 
 export function useActiveTopic(assistantId: string, topic?: Topic) {
   const { assistant } = useAssistant(assistantId)
@@ -29,8 +33,8 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
 
   useEffect(() => {
     if (activeTopic) {
-      store.dispatch(loadTopicMessagesThunk(activeTopic.id))
-      EventEmitter.emit(EVENT_NAMES.CHANGE_TOPIC, activeTopic)
+      void store.dispatch(loadTopicMessagesThunk(activeTopic.id))
+      void EventEmitter.emit(EVENT_NAMES.CHANGE_TOPIC, activeTopic)
     }
   }, [activeTopic])
 
@@ -82,9 +86,9 @@ export async function getTopicById(topicId: string) {
  * 开始重命名指定话题
  */
 export const startTopicRenaming = (topicId: string) => {
-  const currentIds = cacheService.get<string[]>('renamingTopics') ?? []
+  const currentIds = cacheService.get('topic.renaming') ?? []
   if (!currentIds.includes(topicId)) {
-    cacheService.set('renamingTopics', [...currentIds, topicId])
+    cacheService.set('topic.renaming', [...currentIds, topicId])
   }
 }
 
@@ -93,23 +97,23 @@ export const startTopicRenaming = (topicId: string) => {
  */
 export const finishTopicRenaming = (topicId: string) => {
   // 1. 立即从 renamingTopics 移除
-  const renamingTopics = cacheService.get<string[]>('renamingTopics')
+  const renamingTopics = cacheService.get('topic.renaming')
   if (renamingTopics && renamingTopics.includes(topicId)) {
     cacheService.set(
-      'renamingTopics',
+      'topic.renaming',
       renamingTopics.filter((id) => id !== topicId)
     )
   }
 
   // 2. 立即添加到 newlyRenamedTopics
-  const currentNewlyRenamed = cacheService.get<string[]>('newlyRenamedTopics') ?? []
-  cacheService.set('newlyRenamedTopics', [...currentNewlyRenamed, topicId])
+  const currentNewlyRenamed = cacheService.get('topic.newly_renamed') ?? []
+  cacheService.set('topic.newly_renamed', [...currentNewlyRenamed, topicId])
 
   // 3. 延迟从 newlyRenamedTopics 移除
   setTimeout(() => {
-    const current = cacheService.get<string[]>('newlyRenamedTopics') ?? []
+    const current = cacheService.get('topic.newly_renamed') ?? []
     cacheService.set(
-      'newlyRenamedTopics',
+      'topic.newly_renamed',
       current.filter((id) => id !== topicId)
     )
   }, 700)
@@ -136,20 +140,31 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
       return
     }
 
-    if (!enableTopicNaming) {
+    const applyTopicName = (name: string) => {
+      const data = { ...topic, name } as Topic
+      if (topic.id === _activeTopic.id) {
+        _setActiveTopic(data)
+      }
+      store.dispatch(updateTopic({ assistantId: assistant.id, topic: data }))
+    }
+
+    const getFirstMessageName = () => {
       const message = topic.messages[0]
       const blocks = findMainTextBlocks(message)
-      const topicName = blocks
+      const text = blocks
         .map((block) => block.content)
         .join('\n\n')
-        .substring(0, 50)
+        .trim()
+
+      return truncateText(text)
+    }
+
+    if (!enableTopicNaming) {
+      const topicName = getFirstMessageName()
       if (topicName) {
         try {
           startTopicRenaming(topicId)
-
-          const data = { ...topic, name: topicName } as Topic
-          topic.id === _activeTopic.id && _setActiveTopic(data)
-          store.dispatch(updateTopic({ assistantId: assistant.id, topic: data }))
+          applyTopicName(topicName)
         } finally {
           finishTopicRenaming(topicId)
         }
@@ -158,13 +173,19 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
     }
 
     if (topic && topic.name === i18n.t('chat.default.topic.name') && topic.messages.length >= 2) {
+      startTopicRenaming(topicId)
       try {
-        startTopicRenaming(topicId)
-        const summaryText = await fetchMessagesSummary({ messages: topic.messages, assistant })
+        const { text: summaryText, error } = await fetchMessagesSummary({ messages: topic.messages })
         if (summaryText) {
-          const data = { ...topic, name: summaryText }
-          topic.id === _activeTopic.id && _setActiveTopic(data)
-          store.dispatch(updateTopic({ assistantId: assistant.id, topic: data }))
+          applyTopicName(summaryText)
+        } else {
+          if (error) {
+            window.toast?.error(`${i18n.t('message.error.fetchTopicName')}: ${error}`)
+          }
+          const fallbackName = getFirstMessageName()
+          if (fallbackName) {
+            applyTopicName(fallbackName)
+          }
         }
       } finally {
         finishTopicRenaming(topicId)
@@ -201,26 +222,50 @@ export const TopicManager = {
   },
 
   async removeTopic(id: string) {
-    const messages = await TopicManager.getTopicMessages(id)
-
-    for (const message of messages) {
-      await deleteMessageFiles(message)
-    }
-
-    db.topics.delete(id)
+    await TopicManager.clearTopicMessages(id)
+    await db.topics.delete(id)
   },
 
-  async clearTopicMessages(id: string) {
-    const topic = await TopicManager.getTopic(id)
+  async clearTopicMessages(id: string): Promise<void> {
+    // 暂存需要删除的文件信息
+    let filesToDelete: FileMetadata[] = []
 
-    if (topic) {
-      for (const message of topic?.messages ?? []) {
-        await deleteMessageFiles(message)
-      }
+    try {
+      await db.transaction('rw', [db.topics, db.message_blocks], async () => {
+        const topic = await db.topics.get(id)
 
-      topic.messages = []
+        if (!topic || !topic.messages || topic.messages.length === 0) {
+          return
+        }
 
-      await db.topics.update(id, topic)
+        const blockIds = topic.messages.flatMap((message) => message.blocks || [])
+
+        if (blockIds.length > 0) {
+          // 删除 block 之前先从 DB 里找出来
+          const blocks = await db.message_blocks.where('id').anyOf(blockIds).toArray()
+
+          // 提取文件元数据
+          filesToDelete = blocks
+            .filter(
+              (block): block is ImageMessageBlock | FileMessageBlock =>
+                block.type === MessageBlockType.IMAGE || block.type === MessageBlockType.FILE
+            )
+            .map((block) => block.file)
+            .filter((file) => file !== undefined)
+
+          await db.message_blocks.bulkDelete(blockIds)
+        }
+
+        await db.topics.update(id, { messages: [] })
+      })
+    } catch (dbError) {
+      logger.error(`Failed to clear database records for topic ${id}:`, dbError as Error)
+      throw dbError
+    }
+
+    // 删除文件
+    if (filesToDelete.length > 0) {
+      await safeDeleteFiles(filesToDelete)
     }
   }
 }

@@ -1,51 +1,100 @@
+import { useMultiplePreferences } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
-import { setApiServerEnabled as setApiServerEnabledAction } from '@renderer/store/settings'
-import { useCallback, useEffect, useState } from 'react'
+import { setApiServerRunningAction } from '@renderer/store/runtime'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const logger = loggerService.withContext('useApiServer')
+const API_SERVER_PREFERENCE_KEYS = {
+  enabled: 'feature.csaas.enabled',
+  host: 'feature.csaas.host',
+  port: 'feature.csaas.port',
+  apiKey: 'feature.csaas.api_key'
+} as const
+
+// Module-level single instance subscription to prevent EventEmitter memory leak
+// Only one IPC listener will be registered regardless of how many components use this hook
+const onReadyCallbacks = new Set<() => void>()
+let removeIpcListener: (() => void) | null = null
+let pendingStatusCheck: ReturnType<typeof window.api.apiServer.getStatus> | null = null
+
+const ensureIpcSubscribed = () => {
+  if (!removeIpcListener) {
+    removeIpcListener = window.api.apiServer.onReady(() => {
+      onReadyCallbacks.forEach((cb) => cb())
+    })
+  }
+}
+
+const cleanupIpcIfEmpty = () => {
+  if (onReadyCallbacks.size === 0 && removeIpcListener) {
+    removeIpcListener()
+    removeIpcListener = null
+  }
+}
+
+// Combine concurrent status checks into a single IPC request.
+const requestApiServerStatus = () => {
+  if (!pendingStatusCheck) {
+    pendingStatusCheck = window.api.apiServer.getStatus().finally(() => {
+      pendingStatusCheck = null
+    })
+  }
+
+  return pendingStatusCheck
+}
 
 export const useApiServer = () => {
   const { t } = useTranslation()
-  // FIXME: We currently store two copies of the config data in both the renderer and the main processes,
-  // which carries the risk of data inconsistency. This should be modified so that the main process stores
-  // the data, and the renderer retrieves it.
-  const apiServerConfig = useAppSelector((state) => state.settings.apiServer)
+
+  // Use new preference system for API server configuration
+  const [apiServerConfig, setApiServerConfig] = useMultiplePreferences(API_SERVER_PREFERENCE_KEYS)
+
   const dispatch = useAppDispatch()
 
-  // Optimistic initial state.
-  const [apiServerRunning, setApiServerRunning] = useState(apiServerConfig.enabled)
+  const apiServerRunning = useAppSelector((state) => state.runtime.apiServerRunning)
+  // Is checking the API server status
   const [apiServerLoading, setApiServerLoading] = useState(true)
+
+  const setApiServerRunning = useCallback(
+    (running: boolean) => {
+      dispatch(setApiServerRunningAction(running))
+    },
+    [dispatch]
+  )
 
   const setApiServerEnabled = useCallback(
     (enabled: boolean) => {
-      dispatch(setApiServerEnabledAction(enabled))
+      void setApiServerConfig({ enabled })
     },
-    [dispatch]
+    [setApiServerConfig]
   )
 
   // API Server functions
   const checkApiServerStatus = useCallback(async () => {
     setApiServerLoading(true)
     try {
-      const status = await window.api.apiServer.getStatus()
+      const status = await requestApiServerStatus()
       setApiServerRunning(status.running)
+      if (status.running && !apiServerConfig.enabled) {
+        setApiServerEnabled(true)
+      }
     } catch (error: any) {
       logger.error('Failed to check API server status:', error)
     } finally {
       setApiServerLoading(false)
     }
-  }, [])
+  }, [apiServerConfig.enabled, setApiServerEnabled, setApiServerRunning])
 
   const startApiServer = useCallback(async () => {
     if (apiServerLoading) return
-
     setApiServerLoading(true)
     try {
       const result = await window.api.apiServer.start()
       if (result.success) {
         setApiServerRunning(true)
+        setApiServerEnabled(true)
         window.toast.success(t('apiServer.messages.startSuccess'))
       } else {
         window.toast.error(t('apiServer.messages.startError') + result.error)
@@ -55,16 +104,16 @@ export const useApiServer = () => {
     } finally {
       setApiServerLoading(false)
     }
-  }, [apiServerLoading, t])
+  }, [apiServerLoading, setApiServerEnabled, setApiServerRunning, t])
 
   const stopApiServer = useCallback(async () => {
     if (apiServerLoading) return
-
     setApiServerLoading(true)
     try {
       const result = await window.api.apiServer.stop()
       if (result.success) {
         setApiServerRunning(false)
+        setApiServerEnabled(false)
         window.toast.success(t('apiServer.messages.stopSuccess'))
       } else {
         window.toast.error(t('apiServer.messages.stopError') + result.error)
@@ -74,14 +123,14 @@ export const useApiServer = () => {
     } finally {
       setApiServerLoading(false)
     }
-  }, [apiServerLoading, t])
+  }, [apiServerLoading, setApiServerEnabled, setApiServerRunning, t])
 
   const restartApiServer = useCallback(async () => {
     if (apiServerLoading) return
-
     setApiServerLoading(true)
     try {
       const result = await window.api.apiServer.restart()
+      setApiServerEnabled(result.success)
       if (result.success) {
         await checkApiServerStatus()
         window.toast.success(t('apiServer.messages.restartSuccess'))
@@ -93,11 +142,36 @@ export const useApiServer = () => {
     } finally {
       setApiServerLoading(false)
     }
-  }, [apiServerLoading, checkApiServerStatus, t])
+  }, [apiServerLoading, checkApiServerStatus, setApiServerEnabled, t])
 
+  // Only check status once on mount
   useEffect(() => {
-    checkApiServerStatus()
-  }, [checkApiServerStatus])
+    void checkApiServerStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Use ref to keep the latest checkApiServerStatus without causing re-subscription
+  const checkStatusRef = useRef(checkApiServerStatus)
+  useEffect(() => {
+    checkStatusRef.current = checkApiServerStatus
+  })
+
+  // Create stable callback for the single instance subscription
+  const handleReady = useCallback(() => {
+    logger.info('API server ready event received, checking status')
+    void checkStatusRef.current()
+  }, [])
+
+  // Listen for API server ready event using single instance subscription
+  useEffect(() => {
+    ensureIpcSubscribed()
+    onReadyCallbacks.add(handleReady)
+
+    return () => {
+      onReadyCallbacks.delete(handleReady)
+      cleanupIpcIfEmpty()
+    }
+  }, [handleReady])
 
   return {
     apiServerConfig,
@@ -107,6 +181,7 @@ export const useApiServer = () => {
     stopApiServer,
     restartApiServer,
     checkApiServerStatus,
-    setApiServerEnabled
+    setApiServerEnabled,
+    setApiServerConfig
   }
 }

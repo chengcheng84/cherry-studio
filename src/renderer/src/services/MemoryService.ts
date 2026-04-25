@@ -1,14 +1,19 @@
 import { loggerService } from '@logger'
+import { getModel } from '@renderer/hooks/useModel'
 import store from '@renderer/store'
 import { selectMemoryConfig } from '@renderer/store/memory'
 import type {
   AddMemoryOptions,
   AssistantMessage,
+  KnowledgeBase,
   MemoryHistoryItem,
   MemoryListOptions,
   MemorySearchOptions,
   MemorySearchResult
 } from '@types'
+import { now } from 'lodash'
+
+import { getKnowledgeBaseParams } from './KnowledgeService'
 
 const logger = loggerService.withContext('MemoryService')
 
@@ -23,12 +28,11 @@ interface SearchResult {
  * Service for managing memory operations including storing, searching, and retrieving memories
  * This service delegates all operations to the main process via IPC
  */
-class MemoryService {
-  private static instance: MemoryService | null = null
+export class MemoryService {
   private currentUserId: string = 'default-user'
 
   constructor() {
-    this.init()
+    void this.init()
   }
 
   /**
@@ -36,20 +40,6 @@ class MemoryService {
    */
   private async init(): Promise<void> {
     await this.updateConfig()
-  }
-
-  public static getInstance(): MemoryService {
-    if (!MemoryService.instance) {
-      MemoryService.instance = new MemoryService()
-      MemoryService.instance.updateConfig().catch((error) => {
-        logger.error('Failed to initialize MemoryService:', error)
-      })
-    }
-    return MemoryService.instance
-  }
-
-  public static reloadInstance(): void {
-    MemoryService.instance = new MemoryService()
   }
 
   /**
@@ -203,16 +193,28 @@ class MemoryService {
       }
 
       const memoryConfig = selectMemoryConfig(store.getState())
-      const embedderApiClient = memoryConfig.embedderApiClient
-      const llmApiClient = memoryConfig.llmApiClient
+      const embeddingModel = memoryConfig.embeddingModel
 
-      const configWithProviders = {
-        ...memoryConfig,
-        embedderApiClient,
-        llmApiClient
+      if (!embeddingModel) {
+        return window.api.memory.setConfig(memoryConfig)
       }
 
-      return window.api.memory.setConfig(configWithProviders)
+      // Get knowledge base params for memory
+      const { embedApiClient: embeddingApiClient } = getKnowledgeBaseParams({
+        id: 'memory',
+        name: 'Memory',
+        model: getModel(embeddingModel?.id, embeddingModel?.provider),
+        dimensions: memoryConfig.embeddingDimensions,
+        items: [],
+        created_at: now(),
+        updated_at: now(),
+        version: 1
+      } as KnowledgeBase)
+
+      return window.api.memory.setConfig({
+        ...memoryConfig,
+        embeddingApiClient
+      })
     } catch (error) {
       logger.warn('Failed to update memory config:', error as Error)
       return
@@ -220,4 +222,4 @@ class MemoryService {
   }
 }
 
-export default MemoryService
+export const memoryService = new MemoryService()

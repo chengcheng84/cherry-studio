@@ -1,6 +1,5 @@
 import '@renderer/assets/styles/selection-toolbar.css'
 
-import { Avatar } from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
 import { AppLogo } from '@renderer/config/env'
@@ -26,7 +25,7 @@ const updateWindowSize = () => {
     logger.error('Root element not found')
     return
   }
-  window.api?.selection.determineToolbarSize(rootElement.scrollWidth, rootElement.scrollHeight)
+  void window.api?.selection.determineToolbarSize(rootElement.scrollWidth, rootElement.scrollHeight)
 }
 
 /**
@@ -71,8 +70,22 @@ const ActionIcons: FC<{
     (action: SelectionActionItem) => {
       const displayName = action.isBuiltIn ? t(action.name) : action.name
 
+      const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleAction(action)
+        }
+      }
+
       return (
-        <ActionButton key={action.id} onClick={() => handleAction(action)} title={isCompact ? displayName : undefined}>
+        <ActionButton
+          key={action.id}
+          onClick={() => handleAction(action)}
+          onKeyDown={handleKeyDown}
+          title={isCompact ? displayName : undefined}
+          role="button"
+          aria-label={displayName}
+          tabIndex={0}>
           <ActionIcon>
             {action.id === 'copy' ? (
               renderCopyIcon()
@@ -168,7 +181,7 @@ const SelectionToolbar: FC<{ demo?: boolean }> = ({ demo = false }) => {
   }, [demo, isCompact, actionItems])
 
   useEffect(() => {
-    !demo && i18n.changeLanguage(language || navigator.language || defaultLanguage)
+    void (!demo && i18n.changeLanguage(language || navigator.language || defaultLanguage))
   }, [language, demo])
 
   useEffect(() => {
@@ -189,6 +202,30 @@ const SelectionToolbar: FC<{ demo?: boolean }> = ({ demo = false }) => {
     }
   }, [customCss, demo])
 
+  /**
+   * Check if text is a valid URI or file path
+   */
+  const isUriOrFilePath = (text: string): boolean => {
+    const trimmed = text.trim()
+    // Must not contain newlines or whitespace
+    if (/\s/.test(trimmed)) {
+      return false
+    }
+    // URI patterns: http://, https://, ftp://, file://, etc.
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+      return true
+    }
+    // Windows absolute path: C:\, D:\, etc.
+    if (/^[a-zA-Z]:[/\\]/.test(trimmed)) {
+      return true
+    }
+    // Unix absolute path: /path/to/file
+    if (/^\/[^/]/.test(trimmed)) {
+      return true
+    }
+    return false
+  }
+
   // copy selected text to clipboard
   const handleCopy = useCallback(async () => {
     if (selectedText.current) {
@@ -206,6 +243,43 @@ const SelectionToolbar: FC<{ demo?: boolean }> = ({ demo = false }) => {
     }
   }, [setTimeoutTimer])
 
+  const handleSearch = useCallback((action: SelectionActionItem) => {
+    if (!action.selectedText) return
+
+    const selectedText = action.selectedText.trim()
+
+    let actionString = ''
+    if (isUriOrFilePath(selectedText)) {
+      actionString = selectedText
+    } else {
+      if (!action.searchEngine) return
+
+      const customUrl = action.searchEngine.split('|')[1]
+      if (!customUrl) return
+
+      actionString = customUrl.replace('{{queryString}}', encodeURIComponent(selectedText))
+    }
+
+    void window.api?.openWebsite(actionString)
+    void window.api?.selection.hideToolbar()
+  }, [])
+
+  /**
+   * Quote the selected text to the inputbar of the main window
+   */
+  const handleQuote = (action: SelectionActionItem) => {
+    if (action.selectedText) {
+      void window.api?.quoteToMainWindow(action.selectedText)
+      void window.api?.selection.hideToolbar()
+    }
+  }
+
+  const handleDefaultAction = (action: SelectionActionItem) => {
+    // [macOS] only macOS has the available isFullscreen mode
+    void window.api?.selection.processAction(action, isFullScreen.current)
+    void window.api?.selection.hideToolbar()
+  }
+
   const handleAction = useCallback(
     (action: SelectionActionItem) => {
       if (demo) return
@@ -215,7 +289,7 @@ const SelectionToolbar: FC<{ demo?: boolean }> = ({ demo = false }) => {
 
       switch (action.id) {
         case 'copy':
-          handleCopy()
+          void handleCopy()
           break
         case 'search':
           handleSearch(newAction)
@@ -228,35 +302,8 @@ const SelectionToolbar: FC<{ demo?: boolean }> = ({ demo = false }) => {
           break
       }
     },
-    [demo, handleCopy]
+    [demo, handleCopy, handleSearch]
   )
-
-  const handleSearch = (action: SelectionActionItem) => {
-    if (!action.searchEngine) return
-
-    const customUrl = action.searchEngine.split('|')[1]
-    if (!customUrl) return
-
-    const searchUrl = customUrl.replace('{{queryString}}', encodeURIComponent(action.selectedText || ''))
-    window.api?.openWebsite(searchUrl)
-    window.api?.selection.hideToolbar()
-  }
-
-  /**
-   * Quote the selected text to the inputbar of the main window
-   */
-  const handleQuote = (action: SelectionActionItem) => {
-    if (action.selectedText) {
-      window.api?.quoteToMainWindow(action.selectedText)
-      window.api?.selection.hideToolbar()
-    }
-  }
-
-  const handleDefaultAction = (action: SelectionActionItem) => {
-    // [macOS] only macOS has the available isFullscreen mode
-    window.api?.selection.processAction(action, isFullScreen.current)
-    window.api?.selection.hideToolbar()
-  }
 
   return (
     <Container>
@@ -306,7 +353,7 @@ const LogoWrapper = styled.div<{ $draggable: boolean }>`
   ${({ $draggable }) => $draggable && ' -webkit-app-region: drag;'};
 `
 
-const Logo = styled(Avatar)`
+const Logo = styled.img`
   height: var(--selection-toolbar-logo-size);
   width: var(--selection-toolbar-logo-size);
   &.animate {

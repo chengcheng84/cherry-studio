@@ -2,7 +2,7 @@ import { Button, ColFlex, Flex, RowFlex, Tooltip } from '@cherrystudio/ui'
 import CollapsibleSearchBar from '@renderer/components/CollapsibleSearchBar'
 import { LoadingIcon, StreamlineGoodHealthAndWellBeing } from '@renderer/components/Icons'
 import CustomTag from '@renderer/components/Tags/CustomTag'
-import { isNewApiProvider, PROVIDER_URLS } from '@renderer/config/providers'
+import { PROVIDER_URLS } from '@renderer/config/providers'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { getProviderLabel } from '@renderer/i18n/label'
 import { SettingHelpLink, SettingHelpText, SettingHelpTextRow, SettingSubtitle } from '@renderer/pages/settings'
@@ -13,9 +13,11 @@ import ManageModelsPopup from '@renderer/pages/settings/ProviderSettings/ModelLi
 import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiAddModelPopup'
 import type { Model } from '@renderer/types'
 import { filterModelsByKeywords } from '@renderer/utils'
-import { Spin } from 'antd'
+import { getDuplicateModelNames } from '@renderer/utils/model'
+import { isNewApiProvider } from '@renderer/utils/provider'
+import { Space, Spin } from 'antd'
 import { groupBy, isEmpty, sortBy, toPairs } from 'lodash'
-import { ListCheck, Plus } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import React, { memo, startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -48,6 +50,9 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
   const { t } = useTranslation()
   const { provider, models, removeModel } = useProvider(providerId)
 
+  // 稳定的编辑模型回调，避免内联函数导致子组件 memo 失效
+  const handleEditModel = useCallback((model: Model) => EditModelPopup.show({ provider, model }), [provider])
+
   const providerConfig = PROVIDER_URLS[provider.id]
   const docsWebsite = providerConfig?.websites?.docs
   const modelsWebsite = providerConfig?.websites?.models
@@ -61,6 +66,12 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
   })
 
   const { isChecking: isHealthChecking, modelStatuses, runHealthCheck } = useHealthCheck(provider, models)
+  const duplicateModelNames = useMemo(() => getDuplicateModelNames(models), [models])
+
+  // 将 modelStatuses 数组转换为 Map，实现 O(1) 查找
+  const modelStatusMap = useMemo(() => {
+    return new Map(modelStatuses.map((status) => [status.model.id, status]))
+  }, [modelStatuses])
 
   const setSearchText = useCallback((text: string) => {
     startTransition(() => {
@@ -83,14 +94,14 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
   }, [displayedModelGroups])
 
   const onManageModel = useCallback(() => {
-    ManageModelsPopup.show({ providerId: provider.id })
+    void ManageModelsPopup.show({ providerId: provider.id })
   }, [provider.id])
 
   const onAddModel = useCallback(() => {
     if (isNewApiProvider(provider)) {
-      NewApiAddModelPopup.show({ title: t('settings.models.add.add_model'), provider })
+      void NewApiAddModelPopup.show({ title: t('settings.models.add.add_model'), provider })
     } else {
-      AddModelPopup.show({ title: t('settings.models.add.add_model'), provider })
+      void AddModelPopup.show({ title: t('settings.models.add.add_model'), provider })
     }
   }, [provider, t])
 
@@ -100,33 +111,58 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
   )
 
   const isLoading = useMemo(() => displayedModelGroups === null, [displayedModelGroups])
+  const hasNoModels = useMemo(() => models.length === 0, [models.length])
+
+  const actionButtons = (
+    <Space.Compact>
+      <Button onClick={onManageModel} size="icon" disabled={isHealthChecking}>
+        <RefreshCw size={16} />
+        {t('settings.models.manage.fetch_list')}
+      </Button>
+      {provider.id !== 'ovms' ? (
+        <Tooltip title={t('button.add')}>
+          <Button onClick={onAddModel} size="icon" disabled={isHealthChecking}>
+            <Plus size={16} />
+          </Button>
+        </Tooltip>
+      ) : (
+        <Tooltip title={t('button.download')}>
+          <Button onClick={onDownloadModel} size="icon">
+            <Plus size={16} />
+          </Button>
+        </Tooltip>
+      )}
+    </Space.Compact>
+  )
 
   return (
     <>
-      <SettingSubtitle className="mb-[5px]">
-        <RowFlex className="w-full items-center justify-between">
-          <RowFlex className="items-center gap-2">
-            <SettingSubtitle className="mt-0">{t('common.models')}</SettingSubtitle>
-            {modelCount > 0 && (
-              <CustomTag color="#8c8c8c" size={10}>
-                {modelCount}
-              </CustomTag>
+      <SettingSubtitle style={{ marginBottom: 12 }}>
+        <RowFlex className="items-center justify-between" style={{ width: '100%' }}>
+          <RowFlex className="items-center gap-2.5">
+            <SettingSubtitle style={{ marginTop: 0 }}>{t('common.models')}</SettingSubtitle>
+            <CustomTag color="#8c8c8c" size={10}>
+              {modelCount}
+            </CustomTag>
+            {!hasNoModels && (
+              <>
+                <Tooltip title={t('settings.models.check.button_caption')}>
+                  <Button size="icon" onClick={runHealthCheck}>
+                    <StreamlineGoodHealthAndWellBeing size={16} isActive={isHealthChecking} color="var(--color-icon)" />
+                  </Button>
+                </Tooltip>
+                <CollapsibleSearchBar
+                  onSearch={setSearchText}
+                  placeholder={t('models.search.placeholder')}
+                  tooltip={t('models.search.tooltip')}
+                />
+              </>
             )}
-            <CollapsibleSearchBar
-              onSearch={setSearchText}
-              placeholder={t('models.search.placeholder')}
-              tooltip={t('models.search.tooltip')}
-            />
           </RowFlex>
-          <RowFlex>
-            <Tooltip content={t('settings.models.check.button_caption')} closeDelay={0}>
-              <Button variant="ghost" onClick={runHealthCheck}>
-                <StreamlineGoodHealthAndWellBeing size={16} isActive={isHealthChecking} />
-              </Button>
-            </Tooltip>
-          </RowFlex>
+          {!hasNoModels && actionButtons}
         </RowFlex>
       </SettingSubtitle>
+      {hasNoModels && <div style={{ marginBottom: 12 }}>{actionButtons}</div>}
       <Spin spinning={isLoading} indicator={<LoadingIcon color="var(--color-text-2)" />}>
         {displayedModelGroups && !isEmpty(displayedModelGroups) && (
           <ColFlex className="gap-3">
@@ -135,9 +171,10 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
                 key={group}
                 groupName={group}
                 models={displayedModelGroups[group]}
-                modelStatuses={modelStatuses}
+                duplicateModelNames={duplicateModelNames}
+                modelStatusMap={modelStatusMap}
                 defaultOpen={i <= 5}
-                onEditModel={(model) => EditModelPopup.show({ provider, model })}
+                onEditModel={handleEditModel}
                 onRemoveModel={removeModel}
                 onRemoveGroup={() => displayedModelGroups[group].forEach((model) => removeModel(model))}
               />
@@ -165,23 +202,6 @@ const ModelList: React.FC<ModelListProps> = ({ providerId }) => {
           </SettingHelpTextRow>
         ) : (
           <div className="h-[5px]" />
-        )}
-      </Flex>
-      <Flex className="mt-3 gap-2.5">
-        <Button onClick={onManageModel} disabled={isHealthChecking}>
-          <ListCheck fill="currentColor" size={16} />
-          {t('button.manage')}
-        </Button>
-        {provider.id !== 'ovms' ? (
-          <Button variant="default" onClick={onAddModel} disabled={isHealthChecking}>
-            <Plus size={16} />
-            {t('button.add')}
-          </Button>
-        ) : (
-          <Button onClick={onDownloadModel} disabled={isHealthChecking}>
-            <Plus size={16} />
-            {t('button.download')}
-          </Button>
         )}
       </Flex>
     </>

@@ -1,9 +1,25 @@
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { isLocalAi } from '@renderer/config/env'
 import { SYSTEM_MODELS } from '@renderer/config/models'
 import { SYSTEM_PROVIDERS } from '@renderer/config/providers'
-import type { Model, Provider } from '@renderer/types'
+import type { AwsBedrockAuthType, Model, Provider } from '@renderer/types'
 import { uniqBy } from 'lodash'
 
 type LlmSettings = {
@@ -25,9 +41,15 @@ type LlmSettings = {
     location: string
   }
   awsBedrock: {
+    authType: AwsBedrockAuthType
     accessKeyId: string
     secretAccessKey: string
+    apiKey: string
     region: string
+  }
+  cherryIn: {
+    accessToken: string
+    refreshToken: string
   }
 }
 
@@ -68,9 +90,15 @@ export const initialState: LlmState = {
       location: ''
     },
     awsBedrock: {
+      authType: 'iam',
       accessKeyId: '',
       secretAccessKey: '',
+      apiKey: '',
       region: ''
+    },
+    cherryIn: {
+      accessToken: '',
+      refreshToken: ''
     }
   }
 }
@@ -197,14 +225,38 @@ const llmSlice = createSlice({
     setVertexAIServiceAccountClientEmail: (state, action: PayloadAction<string>) => {
       state.settings.vertexai.serviceAccount.clientEmail = action.payload
     },
+    setAwsBedrockAuthType: (state, action: PayloadAction<AwsBedrockAuthType>) => {
+      state.settings.awsBedrock.authType = action.payload
+    },
     setAwsBedrockAccessKeyId: (state, action: PayloadAction<string>) => {
       state.settings.awsBedrock.accessKeyId = action.payload
     },
     setAwsBedrockSecretAccessKey: (state, action: PayloadAction<string>) => {
       state.settings.awsBedrock.secretAccessKey = action.payload
     },
+    setAwsBedrockApiKey: (state, action: PayloadAction<string>) => {
+      state.settings.awsBedrock.apiKey = action.payload
+    },
     setAwsBedrockRegion: (state, action: PayloadAction<string>) => {
       state.settings.awsBedrock.region = action.payload
+    },
+    setCherryInTokens: (state, action: PayloadAction<{ accessToken: string; refreshToken?: string }>) => {
+      if (!state.settings.cherryIn) {
+        state.settings.cherryIn = {
+          accessToken: '',
+          refreshToken: ''
+        }
+      }
+
+      state.settings.cherryIn.accessToken = action.payload.accessToken
+
+      if (action.payload.refreshToken !== undefined) {
+        state.settings.cherryIn.refreshToken = action.payload.refreshToken
+      }
+    },
+    clearCherryInTokens: (state) => {
+      state.settings.cherryIn.accessToken = ''
+      state.settings.cherryIn.refreshToken = ''
     },
     updateModel: (
       state,
@@ -242,9 +294,13 @@ export const {
   setVertexAILocation,
   setVertexAIServiceAccountPrivateKey,
   setVertexAIServiceAccountClientEmail,
+  setAwsBedrockAuthType,
   setAwsBedrockAccessKeyId,
   setAwsBedrockSecretAccessKey,
+  setAwsBedrockApiKey,
   setAwsBedrockRegion,
+  setCherryInTokens,
+  clearCherryInTokens,
   updateModel
 } = llmSlice.actions
 

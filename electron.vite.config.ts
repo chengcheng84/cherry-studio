@@ -1,12 +1,14 @@
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react-swc'
 import { CodeInspectorPlugin } from 'code-inspector-plugin'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import { resolve } from 'path'
 import { visualizer } from 'rollup-plugin-visualizer'
 
 // assert not supported by biome
 // import pkg from './package.json' assert { type: 'json' }
 import pkg from './package.json'
+import { buildProxyBootstrapPlugin } from './scripts/buildProxyBootstrapPlugin'
 
 const visualizerPlugin = (type: 'renderer' | 'main') => {
   return process.env[`VISUALIZER_${type.toUpperCase()}`] ? [visualizer({ open: true })] : []
@@ -14,10 +16,21 @@ const visualizerPlugin = (type: 'renderer' | 'main') => {
 
 const isDev = process.env.NODE_ENV === 'development'
 const isProd = process.env.NODE_ENV === 'production'
+const bundledMainDependencies = new Set(['@vectorstores/libsql'])
+const mainExternalDependencies = Object.keys(pkg.dependencies).filter(
+  (dependency) => !bundledMainDependencies.has(dependency)
+)
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin(), ...visualizerPlugin('main')],
+    plugins: [
+      ...visualizerPlugin('main'),
+      buildProxyBootstrapPlugin({
+        dependencies: Object.keys(pkg.dependencies),
+        isProd,
+        rootDir: __dirname
+      })
+    ],
     resolve: {
       alias: {
         '@main': resolve('src/main'),
@@ -26,12 +39,16 @@ export default defineConfig({
         '@shared': resolve('packages/shared'),
         '@logger': resolve('src/main/services/LoggerService'),
         '@mcp-trace/trace-core': resolve('packages/mcp-trace/trace-core'),
-        '@mcp-trace/trace-node': resolve('packages/mcp-trace/trace-node')
+        '@mcp-trace/trace-node': resolve('packages/mcp-trace/trace-node'),
+        '@vectorstores/libsql': resolve('packages/vectorstores/libsql/src/index.ts'),
+        '@cherrystudio/provider-registry/node': resolve('packages/provider-registry/src/registry-loader'),
+        '@cherrystudio/provider-registry': resolve('packages/provider-registry/src'),
+        '@test-mocks': resolve('tests/__mocks__')
       }
     },
     build: {
       rollupOptions: {
-        external: ['bufferutil', 'utf-8-validate', 'electron', ...Object.keys(pkg.dependencies)],
+        external: ['bufferutil', 'utf-8-validate', 'electron', ...mainExternalDependencies],
         output: {
           manualChunks: undefined, // 彻底禁用代码分割 - 返回 null 强制单文件打包
           inlineDynamicImports: true // 内联所有动态导入，这是关键配置
@@ -52,8 +69,7 @@ export default defineConfig({
     plugins: [
       react({
         tsDecorators: true
-      }),
-      externalizeDepsPlugin()
+      })
     ],
     resolve: {
       alias: {
@@ -80,20 +96,15 @@ export default defineConfig({
   },
   renderer: {
     plugins: [
+      tanstackRouter({
+        target: 'react',
+        autoCodeSplitting: true,
+        routesDirectory: resolve('src/renderer/src/routes'),
+        generatedRouteTree: resolve('src/renderer/src/routeTree.gen.ts')
+      }),
       (async () => (await import('@tailwindcss/vite')).default())(),
       react({
-        tsDecorators: true,
-        plugins: [
-          [
-            '@swc/plugin-styled-components',
-            {
-              displayName: true, // 开发环境下启用组件名称
-              fileName: false, // 不在类名中包含文件名
-              pure: true, // 优化性能
-              ssr: false // 不需要服务端渲染
-            }
-          ]
-        ]
+        tsDecorators: true
       }),
       ...(isDev ? [CodeInspectorPlugin({ bundler: 'vite' })] : []), // 只在开发环境下启用 CodeInspectorPlugin
       ...visualizerPlugin('renderer')
@@ -111,7 +122,12 @@ export default defineConfig({
         '@cherrystudio/ai-core/built-in/plugins': resolve('packages/aiCore/src/core/plugins/built-in'),
         '@cherrystudio/ai-core': resolve('packages/aiCore/src'),
         '@cherrystudio/extension-table-plus': resolve('packages/extension-table-plus/src'),
-        '@cherrystudio/ui': resolve('packages/ui/src')
+        '@cherrystudio/ai-sdk-provider': resolve('packages/ai-sdk-provider/src'),
+        '@cherrystudio/provider-registry/node': resolve('packages/provider-registry/src/registry-loader'),
+        '@cherrystudio/provider-registry': resolve('packages/provider-registry/src'),
+        '@cherrystudio/ui/icons': resolve('packages/ui/src/components/icons'),
+        '@cherrystudio/ui': resolve('packages/ui/src'),
+        '@test-mocks': resolve('tests/__mocks__')
       }
     },
     optimizeDeps: {
@@ -132,7 +148,8 @@ export default defineConfig({
           selectionToolbar: resolve(__dirname, 'src/renderer/selectionToolbar.html'),
           selectionAction: resolve(__dirname, 'src/renderer/selectionAction.html'),
           traceWindow: resolve(__dirname, 'src/renderer/traceWindow.html'),
-          dataRefactorMigrate: resolve(__dirname, 'src/renderer/dataRefactorMigrate.html')
+          migrationV2: resolve(__dirname, 'src/renderer/migrationV2.html'),
+          detachedWindow: resolve(__dirname, 'src/renderer/detachedWindow.html')
         },
         onwarn(warning, warn) {
           if (warning.code === 'COMMONJS_VARIABLE_IN_ESM') return

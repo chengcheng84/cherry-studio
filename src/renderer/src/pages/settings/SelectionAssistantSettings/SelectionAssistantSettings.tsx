@@ -1,17 +1,16 @@
 import { Button, Switch, Tooltip } from '@cherrystudio/ui'
 import { usePreference } from '@data/hooks/usePreference'
-import { Radio, RadioGroup } from '@heroui/react'
-import { isMac, isWin } from '@renderer/config/constant'
+import { isLinux, isMac, isWin } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { getSelectionDescriptionLabel } from '@renderer/i18n/label'
 import SelectionToolbar from '@renderer/windows/selection/toolbar/SelectionToolbar'
 import type { SelectionFilterMode, SelectionTriggerMode } from '@shared/data/preference/preferenceTypes'
-import { Row, Slider } from 'antd'
-import { CircleHelp, Edit2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Radio, Row, Slider } from 'antd'
+import { CircleCheck, CircleHelp, CircleX, Edit2, TriangleAlert } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 import styled from 'styled-components'
 
 import {
@@ -43,28 +42,40 @@ const SelectionAssistantSettings: FC = () => {
   const [filterList, setFilterList] = usePreference('feature.selection.filter_list')
   const [actionItems, setActionItems] = usePreference('feature.selection.action_items')
 
-  const isSupportedOS = isWin || isMac
+  const isSupportedOS = isWin || isMac || isLinux
 
   const [isFilterListModalOpen, setIsFilterListModalOpen] = useState(false)
   const [isMacTrustModalOpen, setIsMacTrustModalOpen] = useState(false)
   const [opacityValue, setOpacityValue] = useState(actionWindowOpacity)
+  const [linuxEnvInfo, setLinuxEnvInfo] = useState<{
+    isLinuxWaylandDisplay: boolean
+    isLinuxXWaylandMode: boolean
+    hasLinuxInputDeviceAccess: boolean
+    isLinuxCompositorCompatible: boolean
+  } | null>(null)
 
   // force disable selection assistant on non-windows systems
   useEffect(() => {
     const checkMacProcessTrust = async () => {
       const isTrusted = await window.api.mac.isProcessTrusted()
       if (!isTrusted) {
-        setSelectionEnabled(false)
+        void setSelectionEnabled(false)
       }
     }
 
     if (!isSupportedOS && selectionEnabled) {
-      setSelectionEnabled(false)
+      void setSelectionEnabled(false)
       return
     } else if (isMac && selectionEnabled) {
-      checkMacProcessTrust()
+      void checkMacProcessTrust()
     }
   }, [isSupportedOS, selectionEnabled, setSelectionEnabled])
+
+  useEffect(() => {
+    if (isLinux) {
+      void window.api.selection.getLinuxEnvInfo().then(setLinuxEnvInfo)
+    }
+  }, [])
 
   const handleEnableCheckboxChange = async (checked: boolean) => {
     if (!isSupportedOS) return
@@ -77,7 +88,7 @@ const SelectionAssistantSettings: FC = () => {
       }
     }
 
-    setSelectionEnabled(checked)
+    void setSelectionEnabled(checked)
   }
 
   return (
@@ -101,8 +112,8 @@ const SelectionAssistantSettings: FC = () => {
             {!isSupportedOS && <SettingDescription>{t('selection.settings.enable.description')}</SettingDescription>}
           </SettingLabel>
           <Switch
-            isSelected={isSupportedOS && selectionEnabled}
-            onValueChange={handleEnableCheckboxChange}
+            checked={isSupportedOS && selectionEnabled}
+            onCheckedChange={handleEnableCheckboxChange}
             disabled={!isSupportedOS}
           />
         </SettingRow>
@@ -112,7 +123,68 @@ const SelectionAssistantSettings: FC = () => {
             <SelectionToolbar demo />
           </DemoContainer>
         )}
+
+        {selectionEnabled && isLinux && linuxEnvInfo?.isLinuxWaylandDisplay && (
+          <>
+            <SettingDivider />
+            <SettingLabel>
+              <SettingRowTitle>
+                <TriangleAlert size={14} style={{ marginRight: 4, color: 'var(--color-error)' }} />
+                {t('selection.settings.linux.wayland_title')}
+              </SettingRowTitle>
+              {linuxEnvInfo.isLinuxCompositorCompatible ? (
+                <>
+                  <SettingDescription>{t('selection.settings.linux.wayland_description')}</SettingDescription>
+                  <SettingDescription style={{ marginTop: 6 }}>
+                    {t('selection.settings.linux.wayland_checklist_subtitle')}
+                  </SettingDescription>
+                  <ChecklistItem style={{ marginTop: 6 }}>
+                    {linuxEnvInfo.isLinuxXWaylandMode ? (
+                      <CircleCheck
+                        size={13}
+                        style={{ color: 'var(--color-status-success)', marginRight: 6, flexShrink: 0 }}
+                      />
+                    ) : (
+                      <CircleX
+                        size={13}
+                        style={{ color: 'var(--color-status-error)', marginRight: 6, flexShrink: 0 }}
+                      />
+                    )}
+                    <span>
+                      {t('selection.settings.linux.xwayland_label')}
+                      {linuxEnvInfo.isLinuxXWaylandMode
+                        ? t('selection.settings.linux.xwayland_pass')
+                        : t('selection.settings.linux.xwayland_fail')}
+                    </span>
+                  </ChecklistItem>
+                  <ChecklistItem>
+                    {linuxEnvInfo.hasLinuxInputDeviceAccess ? (
+                      <CircleCheck
+                        size={13}
+                        style={{ color: 'var(--color-status-success)', marginRight: 6, flexShrink: 0 }}
+                      />
+                    ) : (
+                      <CircleX
+                        size={13}
+                        style={{ color: 'var(--color-status-error)', marginRight: 6, flexShrink: 0 }}
+                      />
+                    )}
+                    <span>
+                      {t('selection.settings.linux.input_group_label')}
+                      {linuxEnvInfo.hasLinuxInputDeviceAccess
+                        ? t('selection.settings.linux.input_group_pass')
+                        : t('selection.settings.linux.input_group_fail')}
+                    </span>
+                  </ChecklistItem>
+                </>
+              ) : (
+                <SettingDescription>{t('selection.settings.linux.compositor_incompatible')}</SettingDescription>
+              )}
+            </SettingLabel>
+          </>
+        )}
       </SettingGroup>
+
       {selectionEnabled && (
         <>
           <SettingGroup theme={theme}>
@@ -123,17 +195,13 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>
                   <div style={{ marginRight: '4px' }}>{t('selection.settings.toolbar.trigger_mode.title')}</div>
                   {/* FIXME: 没有考虑Linux？ */}
-                  <Tooltip content={getSelectionDescriptionLabel(isWin ? 'windows' : 'mac')}>
+                  <Tooltip content={getSelectionDescriptionLabel(isWin ? 'windows' : isLinux ? 'linux' : 'mac')}>
                     <QuestionIcon size={14} />
                   </Tooltip>
                 </SettingRowTitle>
                 <SettingDescription>{t('selection.settings.toolbar.trigger_mode.description')}</SettingDescription>
               </SettingLabel>
-              <RadioGroup
-                size="sm"
-                orientation="horizontal"
-                value={triggerMode}
-                onValueChange={(value) => setTriggerMode(value as SelectionTriggerMode)}>
+              <Radio.Group value={triggerMode} onChange={(e) => setTriggerMode(e.target.value as SelectionTriggerMode)}>
                 <Tooltip content={t('selection.settings.toolbar.trigger_mode.selected_note')}>
                   <Radio value="selected">{t('selection.settings.toolbar.trigger_mode.selected')}</Radio>
                 </Tooltip>
@@ -154,7 +222,7 @@ const SelectionAssistantSettings: FC = () => {
                   }>
                   <Radio value="shortcut">{t('selection.settings.toolbar.trigger_mode.shortcut')}</Radio>
                 </Tooltip>
-              </RadioGroup>
+              </Radio.Group>
             </SettingRow>
             <SettingDivider />
             <SettingRow>
@@ -162,7 +230,7 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>{t('selection.settings.toolbar.compact_mode.title')}</SettingRowTitle>
                 <SettingDescription>{t('selection.settings.toolbar.compact_mode.description')}</SettingDescription>
               </SettingLabel>
-              <Switch isSelected={isCompact} onValueChange={setIsCompact} />
+              <Switch checked={isCompact} onCheckedChange={setIsCompact} />
             </SettingRow>
           </SettingGroup>
 
@@ -174,7 +242,7 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>{t('selection.settings.window.follow_toolbar.title')}</SettingRowTitle>
                 <SettingDescription>{t('selection.settings.window.follow_toolbar.description')}</SettingDescription>
               </SettingLabel>
-              <Switch isSelected={isFollowToolbar} onValueChange={setIsFollowToolbar} />
+              <Switch checked={isFollowToolbar} onCheckedChange={setIsFollowToolbar} />
             </SettingRow>
             <SettingDivider />
             <SettingRow>
@@ -182,7 +250,7 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>{t('selection.settings.window.remember_size.title')}</SettingRowTitle>
                 <SettingDescription>{t('selection.settings.window.remember_size.description')}</SettingDescription>
               </SettingLabel>
-              <Switch isSelected={isRemeberWinSize} onValueChange={setIsRemeberWinSize} />
+              <Switch checked={isRemeberWinSize} onCheckedChange={setIsRemeberWinSize} />
             </SettingRow>
             <SettingDivider />
             <SettingRow>
@@ -190,7 +258,7 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>{t('selection.settings.window.auto_close.title')}</SettingRowTitle>
                 <SettingDescription>{t('selection.settings.window.auto_close.description')}</SettingDescription>
               </SettingLabel>
-              <Switch isSelected={isAutoClose} onValueChange={setIsAutoClose} />
+              <Switch checked={isAutoClose} onCheckedChange={setIsAutoClose} />
             </SettingRow>
             <SettingDivider />
             <SettingRow>
@@ -198,7 +266,7 @@ const SelectionAssistantSettings: FC = () => {
                 <SettingRowTitle>{t('selection.settings.window.auto_pin.title')}</SettingRowTitle>
                 <SettingDescription>{t('selection.settings.window.auto_pin.description')}</SettingDescription>
               </SettingLabel>
-              <Switch isSelected={isAutoPin} onValueChange={setIsAutoPin} />
+              <Switch checked={isAutoPin} onCheckedChange={setIsAutoPin} />
             </SettingRow>
             <SettingDivider />
             <SettingRow>
@@ -227,18 +295,24 @@ const SelectionAssistantSettings: FC = () => {
             <SettingDivider />
             <SettingRow>
               <SettingLabel>
-                <SettingRowTitle>{t('selection.settings.advanced.filter_mode.title')}</SettingRowTitle>
+                <SettingRowTitle>
+                  {t('selection.settings.advanced.filter_mode.title')}
+                  {isLinux && linuxEnvInfo?.isLinuxWaylandDisplay && (
+                    <span style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center' }}>
+                      （<TriangleAlert size={13} style={{ margin: '0 3px', color: 'var(--color-error)' }} />
+                      {t('selection.settings.linux.filter_warning_text')}）
+                    </span>
+                  )}
+                </SettingRowTitle>
                 <SettingDescription>{t('selection.settings.advanced.filter_mode.description')}</SettingDescription>
               </SettingLabel>
-              <RadioGroup
-                size="sm"
-                orientation="horizontal"
+              <Radio.Group
                 value={filterMode ?? 'default'}
-                onValueChange={(value) => setFilterMode(value as SelectionFilterMode)}>
+                onChange={(e) => setFilterMode(e.target.value as SelectionFilterMode)}>
                 <Radio value="default">{t('selection.settings.advanced.filter_mode.default')}</Radio>
                 <Radio value="whitelist">{t('selection.settings.advanced.filter_mode.whitelist')}</Radio>
                 <Radio value="blacklist">{t('selection.settings.advanced.filter_mode.blacklist')}</Radio>
-              </RadioGroup>
+              </Radio.Group>
             </SettingRow>
 
             {filterMode && filterMode !== 'default' && (
@@ -293,6 +367,14 @@ const DemoContainer = styled.div`
 
 const QuestionIcon = styled(CircleHelp)`
   cursor: pointer;
+  color: var(--color-text-3);
+`
+
+const ChecklistItem = styled.div`
+  display: flex;
+  align-items: center;
+  margin-bottom: 2px;
+  font-size: 12px;
   color: var(--color-text-3);
 `
 

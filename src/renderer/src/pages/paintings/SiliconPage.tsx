@@ -3,7 +3,7 @@ import { Button, ColFlex, InfoTooltip, RowFlex, Switch } from '@cherrystudio/ui'
 import { useCache } from '@data/hooks/useCache'
 import { usePreference } from '@data/hooks/usePreference'
 import { loggerService } from '@logger'
-import AiProvider from '@renderer/aiCore'
+import { AiProvider } from '@renderer/aiCore'
 import ImageSize1_1 from '@renderer/assets/images/paintings/image-size-1-1.svg'
 import ImageSize1_2 from '@renderer/assets/images/paintings/image-size-1-2.svg'
 import ImageSize3_2 from '@renderer/assets/images/paintings/image-size-3-2.svg'
@@ -23,12 +23,12 @@ import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
 import type { FileMetadata, Painting } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { Input, InputNumber, Radio, Select, Slider } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
 import SendMessageButton from '../home/Inputbar/SendMessageButton'
@@ -151,7 +151,7 @@ const SiliconPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const onGenerate = async () => {
-    await checkProviderEnabled(siliconFlowProvider!, t)
+    await checkProviderEnabled(siliconFlowProvider, t)
 
     if (painting.files.length > 0) {
       const confirmed = await window.modal.confirm({
@@ -276,7 +276,7 @@ const SiliconPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
     }
 
-    removePainting('siliconflow_paintings', paintingToDelete)
+    void removePainting('siliconflow_paintings', paintingToDelete)
   }
 
   const onSelectPainting = (newPainting: Painting) => {
@@ -325,7 +325,7 @@ const SiliconPage: FC<{ Options: string[] }> = ({ Options }) => {
       if (spaceClickCount === 2) {
         setSpaceClickCount(0)
         setIsTranslating(true)
-        translate()
+        void translate()
       }
     }
   }
@@ -333,7 +333,7 @@ const SiliconPage: FC<{ Options: string[] }> = ({ Options }) => {
   const handleProviderChange = (providerId: string) => {
     const routeName = location.pathname.split('/').pop()
     if (providerId !== routeName) {
-      navigate('../' + providerId, { replace: true })
+      void navigate({ to: '../' + providerId, replace: true })
     }
   }
 
@@ -464,8 +464,8 @@ const SiliconPage: FC<{ Options: string[] }> = ({ Options }) => {
           </SettingTitle>
           <RowFlex>
             <Switch
-              isSelected={painting.promptEnhancement}
-              onValueChange={(checked) => updatePaintingState({ promptEnhancement: checked })}
+              checked={painting.promptEnhancement}
+              onCheckedChange={(checked) => updatePaintingState({ promptEnhancement: checked })}
             />
           </RowFlex>
         </LeftContainer>

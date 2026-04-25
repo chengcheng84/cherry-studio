@@ -12,6 +12,7 @@ import {
   delNode,
   loadTree,
   renameNode as renameEntry,
+  resolveNotesPath,
   sortTree,
   uploadNotes
 } from '@renderer/services/NotesService'
@@ -39,6 +40,7 @@ import {
 } from '@renderer/store/note'
 import type { NotesSortType, NotesTreeNode } from '@renderer/types/note'
 import type { FileChangeEvent } from '@shared/config/types'
+import { message } from 'antd'
 import { debounce } from 'lodash'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
@@ -161,7 +163,7 @@ const NotesPage: FC = () => {
   }, [currentContent])
 
   useEffect(() => {
-    refreshTree()
+    void refreshTree()
   }, [refreshTree])
 
   // Re-merge tree state when starred or expanded paths change
@@ -192,7 +194,7 @@ const NotesPage: FC = () => {
   const debouncedSave = useMemo(
     () =>
       debounce((content: string, filePath: string | undefined) => {
-        saveCurrentNote(content, filePath)
+        void saveCurrentNote(content, filePath)
       }, 800), // 800ms防抖延迟
     [saveCurrentNote]
   )
@@ -246,9 +248,43 @@ const NotesPage: FC = () => {
         updateNotesPath(defaultPath)
         return
       }
+
+      // 验证路径是否有效（处理跨平台恢复场景）
+      try {
+        const resolved = await resolveNotesPath(notesPath)
+        if (!resolved.isFallback) {
+          return
+        }
+        const defaultPath = resolved.path
+
+        logger.warn('Invalid notes path detected, resetting to default', {
+          previousPath: notesPath,
+          defaultPath
+        })
+
+        // 重置为默认路径
+        updateNotesPath(defaultPath)
+
+        // 检查默认路径下是否有笔记文件
+        try {
+          const tree = await window.api.file.getDirectoryStructure(defaultPath)
+          if (!tree || tree.length === 0) {
+            // 默认目录为空，提示用户需要迁移文件
+            message.warning({
+              content: t('notes.crossPlatformRestoreWarning', { path: defaultPath }),
+              duration: 10
+            })
+          }
+        } catch (error) {
+          // 目录不存在或读取失败，会由 FileStorage 自动创建
+          logger.debug('Default notes directory will be created', { error })
+        }
+      } catch (error) {
+        logger.error('Failed to validate notes path:', error as Error)
+      }
     }
 
-    initialize()
+    void initialize()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesPath])
 
@@ -295,6 +331,16 @@ const NotesPage: FC = () => {
               break
             }
 
+            case 'refresh': {
+              // 批量操作完成后的单次刷新
+              logger.debug('Received refresh event, triggering tree refresh')
+              const refresh = refreshTreeRef.current
+              if (refresh) {
+                await refresh()
+              }
+              break
+            }
+
             case 'add':
             case 'addDir':
             case 'unlink':
@@ -332,7 +378,7 @@ const NotesPage: FC = () => {
       }
     }
 
-    startFileWatcher()
+    void startFileWatcher()
 
     return () => {
       if (watcherRef.current) {
@@ -621,7 +667,27 @@ const NotesPage: FC = () => {
           throw new Error('No folder path selected')
         }
 
-        const result = await uploadNotes(files, targetFolderPath)
+        // Validate uploadNotes function is available
+        if (typeof uploadNotes !== 'function') {
+          logger.error('uploadNotes function is not available', { uploadNotes })
+          window.toast.error(t('notes.upload_failed'))
+          return
+        }
+
+        let result: Awaited<ReturnType<typeof uploadNotes>>
+        try {
+          result = await uploadNotes(files, targetFolderPath)
+        } catch (uploadError) {
+          logger.error('Upload operation failed:', uploadError as Error)
+          throw uploadError
+        }
+
+        // Validate result object
+        if (!result || typeof result !== 'object') {
+          logger.error('Invalid upload result:', { result })
+          window.toast.error(t('notes.upload_failed'))
+          return
+        }
 
         // 检查上传结果
         if (result.fileCount === 0) {
@@ -717,10 +783,17 @@ const NotesPage: FC = () => {
         const normalizedActivePath = activeFilePath ? normalizePathValue(activeFilePath) : undefined
         if (normalizedActivePath) {
           if (normalizedActivePath === sourceNode.externalPath) {
+            // Cancel debounced save to prevent saving to old path
+            debouncedSaveRef.current?.cancel()
+            lastFilePathRef.current = destinationPath
             dispatch(setActiveFilePath(destinationPath))
           } else if (sourceNode.type === 'folder' && normalizedActivePath.startsWith(`${sourceNode.externalPath}/`)) {
             const suffix = normalizedActivePath.slice(sourceNode.externalPath.length)
-            dispatch(setActiveFilePath(`${destinationPath}${suffix}`))
+            const newActivePath = `${destinationPath}${suffix}`
+            // Cancel debounced save to prevent saving to old path
+            debouncedSaveRef.current?.cancel()
+            lastFilePathRef.current = newActivePath
+            dispatch(setActiveFilePath(newActivePath))
           }
         }
 

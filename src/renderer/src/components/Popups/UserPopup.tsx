@@ -1,5 +1,5 @@
 import { Center, ColFlex, RowFlex } from '@cherrystudio/ui'
-import { Avatar, EmojiAvatar } from '@cherrystudio/ui'
+import { Avatar, AvatarImage, EmojiAvatar } from '@cherrystudio/ui'
 import { cacheService } from '@data/CacheService'
 import { usePreference } from '@data/hooks/usePreference'
 import DefaultAvatar from '@renderer/assets/images/avatar.png'
@@ -44,7 +44,7 @@ const PopupContainer: React.FC<Props> = ({ resolve }) => {
       // set emoji string
       await ImageStorage.set('avatar', emoji)
       // update avatar display
-      cacheService.set('avatar', emoji)
+      cacheService.set('app.user.avatar', emoji)
       setEmojiPickerOpen(false)
     } catch (error: any) {
       window.toast.error(error.message)
@@ -53,7 +53,7 @@ const PopupContainer: React.FC<Props> = ({ resolve }) => {
   const handleReset = async () => {
     try {
       await ImageStorage.set('avatar', DefaultAvatar)
-      cacheService.set('avatar', DefaultAvatar)
+      cacheService.set('app.user.avatar', DefaultAvatar)
       setDropdownOpen(false)
     } catch (error: any) {
       window.toast.error(error.message)
@@ -78,7 +78,7 @@ const PopupContainer: React.FC<Props> = ({ resolve }) => {
                   const compressedFile = await compressImage(_file)
                   await ImageStorage.set('avatar', compressedFile)
                 }
-                cacheService.set('avatar', await ImageStorage.get('avatar'))
+                cacheService.set('app.user.avatar', await ImageStorage.get('avatar'))
                 setDropdownOpen(false)
               } catch (error: any) {
                 window.toast.error(error.message)
@@ -110,7 +110,7 @@ const PopupContainer: React.FC<Props> = ({ resolve }) => {
           style={{ width: '100%', textAlign: 'center' }}
           onClick={(e) => {
             e.stopPropagation()
-            handleReset()
+            void handleReset()
           }}>
           {t('settings.general.avatar.reset')}
         </div>
@@ -158,7 +158,9 @@ const PopupContainer: React.FC<Props> = ({ resolve }) => {
                   {avatar}
                 </EmojiAvatar>
               ) : (
-                <UserAvatar src={avatar} />
+                <UserAvatar>
+                  <AvatarImage src={avatar} />
+                </UserAvatar>
               )}
             </Popover>
           </Dropdown>

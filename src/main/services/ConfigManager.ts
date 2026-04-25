@@ -1,7 +1,22 @@
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
+ */
 import { ZOOM_SHORTCUTS } from '@shared/config/constant'
 import type { Shortcut } from '@types'
 import Store from 'electron-store'
-import { v4 as uuidv4 } from 'uuid'
 
 export enum ConfigKeys {
   Language = 'language',
@@ -24,9 +39,12 @@ export enum ConfigKeys {
   SelectionAssistantFilterMode = 'selectionAssistantFilterMode',
   SelectionAssistantFilterList = 'selectionAssistantFilterList',
   DisableHardwareAcceleration = 'disableHardwareAcceleration',
+  UseSystemTitleBar = 'useSystemTitleBar',
   Proxy = 'proxy',
   EnableDeveloperMode = 'enableDeveloperMode',
-  ClientId = 'clientId'
+  ClientId = 'clientId',
+  GitBashPath = 'gitBashPath',
+  GitBashPathSource = 'gitBashPathSource' // 'manual' | 'auto' | null
 }
 
 export class ConfigManager {
@@ -78,13 +96,13 @@ export class ConfigManager {
   //   this.set(ConfigKeys.TrayOnClose, value)
   // }
 
-  getZoomFactor(): number {
-    return this.get<number>(ConfigKeys.ZoomFactor, 1)
-  }
+  // getZoomFactor(): number {
+  //   return this.get<number>(ConfigKeys.ZoomFactor, 1)
+  // }
 
-  setZoomFactor(factor: number) {
-    this.setAndNotify(ConfigKeys.ZoomFactor, factor)
-  }
+  // setZoomFactor(factor: number) {
+  //   this.setAndNotify(ConfigKeys.ZoomFactor, factor)
+  // }
 
   subscribe<T>(key: string, callback: (newValue: T) => void) {
     if (!this.subscribers.has(key)) {
@@ -220,12 +238,20 @@ export class ConfigManager {
   //   this.setAndNotify(ConfigKeys.SelectionAssistantFilterList, value)
   // }
 
-  getDisableHardwareAcceleration(): boolean {
-    return this.get<boolean>(ConfigKeys.DisableHardwareAcceleration, false)
-  }
+  // getDisableHardwareAcceleration(): boolean {
+  //   return this.get<boolean>(ConfigKeys.DisableHardwareAcceleration, false)
+  // }
 
   // setDisableHardwareAcceleration(value: boolean) {
   //   this.set(ConfigKeys.DisableHardwareAcceleration, value)
+  // }
+
+  // getUseSystemTitleBar(): boolean {
+  //   return this.get<boolean>(ConfigKeys.UseSystemTitleBar, false)
+  // }
+
+  // setUseSystemTitleBar(value: boolean) {
+  //   this.set(ConfigKeys.UseSystemTitleBar, value)
   // }
 
   setAndNotify(key: string, value: unknown) {
@@ -240,16 +266,16 @@ export class ConfigManager {
   //   this.set(ConfigKeys.EnableDeveloperMode, value)
   // }
 
-  getClientId(): string {
-    let clientId = this.get<string>(ConfigKeys.ClientId)
+  // getClientId(): string {
+  //   let clientId = this.get<string>(ConfigKeys.ClientId)
 
-    if (!clientId) {
-      clientId = uuidv4()
-      this.set(ConfigKeys.ClientId, clientId)
-    }
+  //   if (!clientId) {
+  //     clientId = uuid()
+  //     this.set(ConfigKeys.ClientId, clientId)
+  //   }
 
-    return clientId
-  }
+  //   return clientId
+  // }
 
   set(key: string, value: unknown, isNotify: boolean = false) {
     this.store.set(key, value)

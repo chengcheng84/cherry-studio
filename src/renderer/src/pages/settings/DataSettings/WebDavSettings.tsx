@@ -37,26 +37,26 @@ const WebDavSettings: FC = () => {
   // 把之前备份的文件定时上传到 webdav，首先先配置 webdav 的 host, port, user, pass, path
 
   const onSyncIntervalChange = async (value: number) => {
-    setWebdavSyncInterval(value)
+    void setWebdavSyncInterval(value)
     if (value === 0) {
       await setWebdavAutoSync(false)
       stopAutoSync('webdav')
     } else {
       await setWebdavAutoSync(true)
-      startAutoSync(false, 'webdav')
+      void startAutoSync(false, 'webdav')
     }
   }
 
   const onMaxBackupsChange = (value: number) => {
-    setWebdavMaxBackups(value)
+    void setWebdavMaxBackups(value)
   }
 
   const onSkipBackupFilesChange = (value: boolean) => {
-    setWebdavSkipBackupFile(value)
+    void setWebdavSkipBackupFile(value)
   }
 
   const onDisableStreamChange = (value: boolean) => {
-    setWebdavDisableStream(value)
+    void setWebdavDisableStream(value)
   }
 
   const renderSyncStatus = () => {
@@ -201,7 +201,7 @@ const WebDavSettings: FC = () => {
       <SettingDivider />
       <SettingRow>
         <SettingRowTitle>{t('settings.data.backup.skip_file_data_title')}</SettingRowTitle>
-        <Switch isSelected={webdavSkipBackupFile} onValueChange={onSkipBackupFilesChange} />
+        <Switch checked={webdavSkipBackupFile} onCheckedChange={onSkipBackupFilesChange} />
       </SettingRow>
       <SettingRow>
         <SettingHelpText>{t('settings.data.backup.skip_file_data_help')}</SettingHelpText>
@@ -209,7 +209,7 @@ const WebDavSettings: FC = () => {
       <SettingDivider />
       <SettingRow>
         <SettingRowTitle>{t('settings.data.webdav.disableStream.title')}</SettingRowTitle>
-        <Switch isSelected={webdavDisableStream} onValueChange={onDisableStreamChange} />
+        <Switch checked={webdavDisableStream} onCheckedChange={onDisableStreamChange} />
       </SettingRow>
       <SettingRow>
         <SettingHelpText>{t('settings.data.webdav.disableStream.help')}</SettingHelpText>

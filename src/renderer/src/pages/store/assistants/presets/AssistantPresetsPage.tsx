@@ -1,6 +1,4 @@
-import { ImportOutlined, PlusOutlined } from '@ant-design/icons'
-import { ColFlex, Flex, RowFlex } from '@cherrystudio/ui'
-import { Button } from '@cherrystudio/ui'
+import { Button, ColFlex, Flex, RowFlex } from '@cherrystudio/ui'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import ListItem from '@renderer/components/ListItem'
 import Scrollbar from '@renderer/components/Scrollbar'
@@ -12,7 +10,7 @@ import type { AssistantPreset } from '@renderer/types'
 import { uuid } from '@renderer/utils'
 import { Empty, Input } from 'antd'
 import { omit } from 'lodash'
-import { Search } from 'lucide-react'
+import { Import, Plus, Search, Settings2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +23,7 @@ import AddAssistantPresetPopup from './components/AddAssistantPresetPopup'
 import AssistantPresetCard from './components/AssistantPresetCard'
 import { AssistantPresetGroupIcon } from './components/AssistantPresetGroupIcon'
 import ImportAssistantPresetPopup from './components/ImportAssistantPresetPopup'
+import ManageAssistantPresetsPopup from './components/ManageAssistantPresetsPopup'
 
 const AssistantPresetsPage: FC = () => {
   const [search, setSearch] = useState('')
@@ -163,7 +162,7 @@ const AssistantPresetsPage: FC = () => {
   }
 
   const handleAddAgent = () => {
-    AddAssistantPresetPopup.show().then(() => {
+    void AddAssistantPresetPopup.show().then(() => {
       handleSearchClear()
     })
   }
@@ -174,6 +173,10 @@ const AssistantPresetsPage: FC = () => {
     } catch (error) {
       window.toast.error(error instanceof Error ? error.message : t('message.agents.import.error'))
     }
+  }
+
+  const handleManageAgents = () => {
+    ManageAssistantPresetsPopup.show()
   }
 
   return (
@@ -252,7 +255,7 @@ const AssistantPresetsPage: FC = () => {
                 <Input
                   placeholder={t('common.search')}
                   className="nodrag"
-                  style={{ width: 300, height: 28, borderRadius: 15, paddingLeft: 12 }}
+                  style={{ width: 200, height: 28, borderRadius: 15, paddingLeft: 12 }}
                   size="small"
                   variant="filled"
                   allowClear
@@ -274,11 +277,15 @@ const AssistantPresetsPage: FC = () => {
                 )
               )}
               <Button variant="ghost" onClick={handleImportAgent}>
-                <ImportOutlined />
+                <Import size={18} color="var(--color-icon)" />
                 {t('assistants.presets.import.title')}
               </Button>
+              <Button variant="ghost" onClick={handleManageAgents}>
+                <Settings2 size={18} color="var(--color-icon)" />
+                {t('assistants.presets.manage.title')}
+              </Button>
               <Button variant="ghost" onClick={handleAddAgent}>
-                <PlusOutlined />
+                <Plus size={18} color="var(--color-icon)" />
                 {t('assistants.presets.add.title')}
               </Button>
             </Flex>

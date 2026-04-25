@@ -39,13 +39,13 @@ const S3Settings: FC = () => {
   const { s3Sync } = useAppSelector((state) => state.backup)
 
   const onSyncIntervalChange = async (value: number) => {
-    setS3SyncInterval(value)
+    void setS3SyncInterval(value)
     if (value === 0) {
       await setS3AutoSync(false)
       stopAutoSync('s3')
     } else {
       await setS3AutoSync(true)
-      startAutoSync(false, 's3')
+      void startAutoSync(false, 's3')
     }
   }
 
@@ -59,11 +59,11 @@ const S3Settings: FC = () => {
   }
 
   const onMaxBackupsChange = (value: number) => {
-    setS3MaxBackups(value)
+    void setS3MaxBackups(value)
   }
 
   const onSkipBackupFilesChange = (value: boolean) => {
-    setS3SkipBackupFile(value)
+    void setS3SkipBackupFile(value)
   }
 
   const renderSyncStatus = () => {
@@ -243,7 +243,7 @@ const S3Settings: FC = () => {
       <SettingDivider />
       <SettingRow>
         <SettingRowTitle>{t('settings.data.s3.skipBackupFile.label')}</SettingRowTitle>
-        <Switch isSelected={s3SkipBackupFile} onValueChange={onSkipBackupFilesChange} />
+        <Switch checked={s3SkipBackupFile} onCheckedChange={onSkipBackupFilesChange} />
       </SettingRow>
       <SettingRow>
         <SettingHelpText>{t('settings.data.s3.skipBackupFile.help')}</SettingHelpText>

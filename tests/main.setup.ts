@@ -9,94 +9,114 @@ vi.mock('@logger', async () => {
   }
 })
 
-// Mock PreferenceService globally for main tests
+// Mock service modules globally for main tests.
+// These mocks export both the class and instance names for backward compat.
 vi.mock('@main/data/PreferenceService', async () => {
   const { MockMainPreferenceServiceExport } = await import('./__mocks__/main/PreferenceService')
-  return MockMainPreferenceServiceExport
-})
-
-// Mock DataApiService globally for main tests
-vi.mock('@main/data/DataApiService', async () => {
-  const { MockMainDataApiServiceExport } = await import('./__mocks__/main/DataApiService')
-  return MockMainDataApiServiceExport
-})
-
-// Mock CacheService globally for main tests
-vi.mock('@main/data/CacheService', async () => {
-  const { MockMainCacheServiceExport } = await import('./__mocks__/main/CacheService')
-  return MockMainCacheServiceExport
-})
-
-// Mock DbService globally for main tests (if exists)
-vi.mock('@main/data/db/DbService', async () => {
-  try {
-    const { MockDbService } = await import('./__mocks__/DbService')
-    return MockDbService
-  } catch {
-    // Return basic mock if DbService mock doesn't exist yet
-    return {
-      dbService: {
-        initialize: vi.fn(),
-        getDb: vi.fn()
-      }
-    }
+  return {
+    ...MockMainPreferenceServiceExport,
+    PreferenceService: vi.fn() // Class export for serviceRegistry
   }
 })
 
+vi.mock('@main/data/DataApiService', async () => {
+  const { MockMainDataApiServiceExport } = await import('./__mocks__/main/DataApiService')
+  return {
+    ...MockMainDataApiServiceExport,
+    DataApiService: vi.fn() // Class export for serviceRegistry
+  }
+})
+
+vi.mock('@main/data/CacheService', async () => {
+  const { MockMainCacheServiceExport } = await import('./__mocks__/main/CacheService')
+  return {
+    ...MockMainCacheServiceExport,
+    CacheService: vi.fn() // Class export for serviceRegistry
+  }
+})
+
+vi.mock('@main/data/db/DbService', async () => {
+  const { MockMainDbServiceExport } = await import('./__mocks__/main/DbService')
+  return {
+    ...MockMainDbServiceExport,
+    DbService: vi.fn() // Class export for serviceRegistry
+  }
+})
+
+// Mock application globally - provides type-safe service access via application.get()
+vi.mock('@main/core/application', async () => {
+  const { mockApplicationFactory } = await import('./__mocks__/main/application')
+  return mockApplicationFactory()
+})
+
 // Mock electron modules that are commonly used in main process
-vi.mock('electron', () => ({
-  app: {
-    getPath: vi.fn((key: string) => {
-      switch (key) {
-        case 'userData':
-          return '/mock/userData'
-        case 'temp':
-          return '/mock/temp'
-        case 'logs':
-          return '/mock/logs'
-        default:
-          return '/mock/unknown'
+vi.mock('electron', () => {
+  const mock = {
+    app: {
+      getPath: vi.fn((key: string) => {
+        switch (key) {
+          case 'userData':
+            return '/mock/userData'
+          case 'temp':
+            return '/mock/temp'
+          case 'logs':
+            return '/mock/logs'
+          default:
+            return '/mock/unknown'
+        }
+      }),
+      getVersion: vi.fn(() => '1.0.0')
+    },
+    ipcMain: {
+      handle: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      removeHandler: vi.fn(),
+      removeListener: vi.fn(),
+      removeAllListeners: vi.fn()
+    },
+    BrowserWindow: vi.fn(),
+    dialog: {
+      showErrorBox: vi.fn(),
+      showMessageBox: vi.fn(),
+      showOpenDialog: vi.fn(),
+      showSaveDialog: vi.fn()
+    },
+    shell: {
+      openExternal: vi.fn(),
+      showItemInFolder: vi.fn()
+    },
+    session: {
+      defaultSession: {
+        clearCache: vi.fn(),
+        clearStorageData: vi.fn()
       }
-    }),
-    getVersion: vi.fn(() => '1.0.0')
-  },
-  ipcMain: {
-    handle: vi.fn(),
-    on: vi.fn(),
-    once: vi.fn(),
-    removeHandler: vi.fn(),
-    removeAllListeners: vi.fn()
-  },
-  BrowserWindow: vi.fn(),
-  dialog: {
-    showErrorBox: vi.fn(),
-    showMessageBox: vi.fn(),
-    showOpenDialog: vi.fn(),
-    showSaveDialog: vi.fn()
-  },
-  shell: {
-    openExternal: vi.fn(),
-    showItemInFolder: vi.fn()
-  },
-  session: {
-    defaultSession: {
-      clearCache: vi.fn(),
-      clearStorageData: vi.fn()
+    },
+    webContents: {
+      getAllWebContents: vi.fn(() => [])
+    },
+    systemPreferences: {
+      getMediaAccessStatus: vi.fn(),
+      askForMediaAccess: vi.fn()
+    },
+    nativeTheme: {
+      themeSource: 'system',
+      shouldUseDarkColors: false,
+      on: vi.fn(),
+      removeListener: vi.fn()
+    },
+    screen: {
+      getPrimaryDisplay: vi.fn(),
+      getAllDisplays: vi.fn()
+    },
+    Notification: vi.fn(),
+    net: {
+      fetch: vi.fn()
     }
-  },
-  webContents: {
-    getAllWebContents: vi.fn(() => [])
-  },
-  systemPreferences: {
-    getMediaAccessStatus: vi.fn(),
-    askForMediaAccess: vi.fn()
-  },
-  screen: {
-    getPrimaryDisplay: vi.fn(),
-    getAllDisplays: vi.fn()
-  },
-  Notification: vi.fn()
-}))
+  }
+
+  return { __esModule: true, ...mock, default: mock }
+})
 
 // Mock Winston for LoggerService dependencies
 vi.mock('winston', () => ({
@@ -131,14 +151,32 @@ vi.mock('winston-daily-rotate-file', () => {
   }))
 })
 
+// Mock electron-store to avoid file system operations
+vi.mock('electron-store', () => {
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      get: vi.fn((key: string, defaultValue?: unknown) => defaultValue),
+      set: vi.fn(),
+      delete: vi.fn(),
+      clear: vi.fn(),
+      has: vi.fn(() => false),
+      store: {}
+    }))
+  }
+})
+
 // Mock Node.js modules
-vi.mock('node:os', () => ({
-  platform: vi.fn(() => 'darwin'),
-  arch: vi.fn(() => 'x64'),
-  version: vi.fn(() => '20.0.0'),
-  cpus: vi.fn(() => [{ model: 'Mock CPU' }]),
-  totalmem: vi.fn(() => 8 * 1024 * 1024 * 1024) // 8GB
-}))
+vi.mock('node:os', () => {
+  const mock = {
+    platform: vi.fn(() => 'darwin'),
+    arch: vi.fn(() => 'x64'),
+    version: vi.fn(() => '20.0.0'),
+    cpus: vi.fn(() => [{ model: 'Mock CPU' }]),
+    homedir: vi.fn(() => '/mock/home'),
+    totalmem: vi.fn(() => 8 * 1024 * 1024 * 1024) // 8GB
+  }
+  return { ...mock, default: mock }
+})
 
 vi.mock('node:path', async () => {
   const actual = await vi.importActual('node:path')
@@ -149,25 +187,29 @@ vi.mock('node:path', async () => {
   }
 })
 
-vi.mock('node:fs', () => ({
-  promises: {
-    access: vi.fn(),
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-    readdir: vi.fn(),
-    stat: vi.fn(),
-    unlink: vi.fn(),
-    rmdir: vi.fn()
-  },
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  readdirSync: vi.fn(),
-  statSync: vi.fn(),
-  unlinkSync: vi.fn(),
-  rmdirSync: vi.fn(),
-  createReadStream: vi.fn(),
-  createWriteStream: vi.fn()
-}))
+vi.mock('node:fs', () => {
+  const mock = {
+    promises: {
+      access: vi.fn(),
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      mkdir: vi.fn(),
+      readdir: vi.fn(),
+      stat: vi.fn(),
+      unlink: vi.fn(),
+      rmdir: vi.fn()
+    },
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    readdirSync: vi.fn(),
+    statSync: vi.fn(),
+    unlinkSync: vi.fn(),
+    rmdirSync: vi.fn(),
+    createReadStream: vi.fn(),
+    createWriteStream: vi.fn()
+  }
+
+  return { ...mock, default: mock }
+})

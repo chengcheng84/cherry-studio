@@ -7,64 +7,97 @@ This file provides guidance to AI coding assistants when working with code in th
 - **Keep it clear**: Write code that is easy to read, maintain, and explain.
 - **Match the house style**: Reuse existing patterns, naming, and conventions.
 - **Search smart**: Prefer `ast-grep` for semantic queries; fall back to `rg`/`grep` when needed.
-- **Build with HeroUI**: Use HeroUI for every new UI component; never add `antd` or `styled-components`.
+- **Build with Tailwind CSS & Shadcn UI**: Use components from `@packages/ui` (Shadcn UI + Tailwind CSS) for every new UI component; never add `antd` or `styled-components`.
 - **Log centrally**: Route all logging through `loggerService` with the right context—no `console.log`.
+- **Access paths centrally**: Use `application.getPath('namespace.key', filename?)` for all main-process filesystem paths—never call `app.getPath()`, `os.homedir()`, or construct paths ad-hoc.
 - **Research via subagent**: Lean on `subagent` for external docs, APIs, news, and references.
 - **Always propose before executing**: Before making any changes, clearly explain your planned approach and wait for explicit user approval to ensure alignment and prevent unwanted modifications.
-- **Write conventional commits with emoji**: Commit small, focused changes using emoji-prefixed Conventional Commit messages (e.g., `✨ feat:`, `🐛 fix:`, `♻️ refactor:`, `
-📝 docs:`).
+- **Lint, test, and format before completion**: Coding tasks are only complete after running `pnpm lint`, `pnpm test`, and `pnpm format` successfully.
+- **Write conventional commits**: Commit small, focused changes using Conventional Commit messages (e.g., `feat:`, `fix:`, `refactor:`, `docs:`).
+- **Sign commits**: Use `git commit --signoff` as required by contributor guidelines.
+
+## Pull Request Workflow (CRITICAL)
+
+When creating a Pull Request, you MUST use the `gh-create-pr` skill.
+If the skill is unavailable, directly read `.agents/skills/gh-create-pr/SKILL.md` and follow it manually.
+
+## Review Workflow
+
+When reviewing a Pull Request, do NOT run `pnpm lint`, `pnpm test`, or `pnpm format` locally.
+Instead, check CI status directly using GitHub CLI:
+
+- **Check CI status**: `gh pr checks <PR_NUMBER>` - View all CI check results for the PR
+- **Check PR details**: `gh pr view <PR_NUMBER>` - View PR status, reviews, and merge readiness
+- **View failed logs**: `gh run view <RUN_ID> --log-failed` - Inspect logs for failed CI runs
+
+Only investigate CI failures by reading the logs, not by re-running checks locally.
+
+## Issue Workflow
+
+When creating an Issue, you MUST use the `gh-create-issue` skill.
+If the skill is unavailable, directly read `.agents/skills/gh-create-issue/SKILL.md` and follow it manually.
+
+### Branch Strategy (Effective April 3, 2026)
+
+> **IMPORTANT**: The `main` branch is now under **code freeze**. Only critical bug fixes submitted via `hotfix/*` branches are accepted. Fix PRs must be minimal in scope and must not include any refactoring code.
+>
+> All new features, refactoring, and optimizations should be developed on the **`v2` branch**. We welcome every developer to actively participate in v2 development!
+>
+> The `v2` branch will only accept new feature submissions after all current features have been fully refactored.
 
 ## Development Commands
 
-- **Install**: `yarn install` - Install all project dependencies
-- **Development**: `yarn dev` - Runs Electron app in development mode with hot reload
-- **Debug**: `yarn debug` - Starts with debugging enabled, use `chrome://inspect` to attach debugger
-- **Build Check**: `yarn build:check` - **REQUIRED** before commits (lint + test + typecheck)
-  - If having i18n sort issues, run `yarn sync:i18n` first to sync template
-  - If having formatting issues, run `yarn format` first
-- **Test**: `yarn test` - Run all tests (Vitest) across main and renderer processes
-- **Single Test**:
-  - `yarn test:main` - Run tests for main process only
-  - `yarn test:renderer` - Run tests for renderer process only
-- **Lint**: `yarn lint` - Fix linting issues and run TypeScript type checking
-- **Format**: `yarn format` - Auto-format code using Biome
+- **Install**: `pnpm install` — Install all project dependencies (requires Node ≥22, pnpm 10.27.0)
+- **Development**: `pnpm dev` — Runs Electron app in development mode with hot reload
+- **Debug**: `pnpm debug` — Starts with debugging; attach via `chrome://inspect` on port 9222
+- **Build Check**: `pnpm build:check` — **REQUIRED** before commits (`pnpm lint && pnpm test`)
+  - If having i18n sort issues, run `pnpm i18n:sync` first
+  - If having formatting issues, run `pnpm format` first
+- **Full Build**: `pnpm build` — TypeScript typecheck + electron-vite build
+- **Test**: `pnpm test` — Run all Vitest tests (main + renderer + aiCore + shared + scripts)
+  - `pnpm test:main` — Main process tests only (Node environment)
+  - `pnpm test:renderer` — Renderer process tests only (jsdom environment)
+  - `pnpm test:aicore` — aiCore package tests only
+  - `pnpm test:watch` — Watch mode
+  - `pnpm test:coverage` — With v8 coverage report
+  - `pnpm test:e2e` — Playwright end-to-end tests
+- **Lint**: `pnpm lint` — oxlint + eslint fix + TypeScript typecheck + i18n check + format check
+- **Format**: `pnpm format` — Biome format + lint (write mode)
+- **Typecheck**: `pnpm typecheck` — Concurrent node + web TypeScript checks using `tsgo`
+- **i18n**:
+  - `pnpm i18n:sync` — Sync i18n template keys
+  - `pnpm i18n:translate` — Auto-translate missing keys
+  - `pnpm i18n:check` — Validate i18n completeness
+- **Bundle Analysis**: `pnpm analyze:renderer` / `pnpm analyze:main` — Visualize bundle sizes
+- **Agents DB**:
+  - `pnpm agents:generate` — Generate Drizzle migrations
+  - `pnpm agents:push` — Push schema to SQLite DB
+  - `pnpm agents:studio` — Open Drizzle Studio
 
 ## Project Architecture
 
 ### Electron Structure
+
 - **Main Process** (`src/main/`): Node.js backend with services (MCP, Knowledge, Storage, etc.)
-- **Renderer Process** (`src/renderer/`): React UI with Redux state management
+- **Renderer Process** (`src/renderer/`): React UI
 - **Preload Scripts** (`src/preload/`): Secure IPC bridge
 
 ### Key Architectural Components
 
-#### Main Process Services (`src/main/services/`)
-
-- **MCPService**: Model Context Protocol server management
-- **KnowledgeService**: Document processing and knowledge base management
-- **FileStorage/S3Storage/WebDav**: Multiple storage backends
-- **WindowService**: Multi-window management (main, mini, selection windows)
-- **ProxyManager**: Network proxy handling
-- **SearchService**: Full-text search capabilities
-
-#### AI Core (`src/renderer/src/aiCore/`)
-
-- **Middleware System**: Composable pipeline for AI request processing
-- **Client Factory**: Supports multiple AI providers (OpenAI, Anthropic, Gemini, etc.)
-- **Stream Processing**: Real-time response handling
-
 #### Data Management
 
-- **Cache System**: Three-layer caching (memory/shared/persist) with React hooks integration
-- **Preferences**: Type-safe configuration management with multi-window synchronization
-- **User Data**: SQLite-based storage with Drizzle ORM for business data
+**MUST READ**: [docs/references/data/README.md](docs/references/data/README.md) for system selection, architecture, and patterns.
 
-#### Knowledge Management
+| System     | Use Case                        | APIs                                            |
+| ---------- | ------------------------------- | ----------------------------------------------- |
+| BootConfig | Early boot settings (pre-lifecycle) | `bootConfigService.get()`, `usePreference('BootConfig.*')` |
+| Cache      | Temp data (can lose)            | `useCache`, `useSharedCache`, `usePersistCache` |
+| Preference | User settings                   | `usePreference`                                 |
+| DataApi    | Business data (**critical**)    | `useQuery`, `useMutation`                       |
 
-- **Embeddings**: Vector search with multiple providers (OpenAI, Voyage, etc.)
-- **OCR**: Document text extraction (system OCR, Doc2x, Mineru)
-- **Preprocessing**: Document preparation pipeline
-- **Loaders**: Support for various file formats (PDF, DOCX, EPUB, etc.)
+Database: SQLite + Drizzle ORM, schemas in `src/main/data/db/schemas/`, migrations via `yarn db:migrations:generate`
+
+**DataApi boundary rule**: DataApi is for SQLite-backed business data only. No database table → no DataApi endpoint; use IPC instead. See [Scope & Boundaries](docs/references/data/api-design-guidelines.md#dataapi-scope--boundaries).
 
 ### Build System
 
@@ -81,6 +114,27 @@ This file provides guidance to AI coding assistants when working with code in th
 - **Component Testing**: React Testing Library
 - **Coverage**: Available via `yarn test:coverage`
 
+#### Main Process Services (Lifecycle)
+
+**MUST READ**: [docs/references/lifecycle/README.md](docs/references/lifecycle/README.md) — architecture, decision guides, usage patterns, and migration steps.
+
+All main-process services that own long-lived resources or register persistent side effects **must** use the lifecycle system:
+
+- **Extend `BaseService`**, apply `@Injectable`, `@ServicePhase`, `@DependsOn` decorators
+- **Register in `serviceRegistry.ts`** (`src/main/core/application/serviceRegistry.ts`) — one line per service
+- **Access via `application.get('Name')`** (or `getOptional()` for `@Conditional` services)
+- **Use `this.ipcHandle()` / `this.ipcOn()`** for IPC — auto-cleaned on stop/destroy, returns `Disposable`
+- **Use `this.registerDisposable()`** for cleanup tracking — accepts `Disposable` objects or `() => void` cleanup functions
+- **Use `Emitter<T>` / `Event<T>`** for inter-service events, **`Signal<T>`** for one-shot completion
+- **Implement `Activatable`** for services with heavy on-demand resources (IPC stays registered, resources load/release via `onActivate()`/`onDeactivate()`)
+- **Do NOT** use `new` or manual singleton patterns — the container manages instantiation, ordering, and shutdown
+
+For detailed code examples, see [Usage Guide](docs/references/lifecycle/lifecycle-usage.md). For migrating legacy services, see [Migration Guide](docs/references/lifecycle/lifecycle-migration-guide.md).
+
+#### Non-Lifecycle Services (Direct-Import Singleton)
+
+Services without long-lived resources or persistent side effects: use **named export singleton** (`export const x = new X()`). No `getInstance()` patterns. See [Decision Guide](docs/references/lifecycle/lifecycle-decision-guide.md) for criteria.
+
 ### Key Patterns
 
 - **IPC Communication**: Secure main-renderer communication via preload scripts
@@ -89,63 +143,166 @@ This file provides guidance to AI coding assistants when working with code in th
 - **Multi-language Support**: i18n with dynamic loading
 - **Theme System**: Light/dark themes with custom CSS variables
 
-### UI Design
 
-The project is in the process of migrating from antd & styled-components to HeroUI. Please use HeroUI to build UI components. The use of antd and styled-components is prohibited.
+### Design Specifications
 
-HeroUI Docs: https://www.heroui.com/docs/guide/introduction
+When generating or modifying any UI component or page styles, you MUST first read the [Design Principle](./DESIGN.md) in the project root directory, strictly follow the colors, fonts, spacing, and component specifications defined therein, and must not use styles outside the specifications.
 
-### Database Architecture
+## v2 Refactoring (In Progress)
 
-- **Database**: SQLite (`cherrystudio.sqlite`) + libsql driver
-- **ORM**: Drizzle ORM with comprehensive migration system
-- **Schemas**: Located in `src/main/data/db/schemas/` directory
+The `main` branch is under code freeze. All development has moved to the `v2` branch.
 
-#### Database Standards
+- **`main` branch**: Only accepts critical bug fixes via `hotfix/*` branches. Minimal changes, no refactoring.
+- **`v2` branch**: All new features, refactoring, and optimizations go here.
 
-- **Table Naming**: Use singular form with snake_case (e.g., `topic`, `message`, `app_state`)
-- **Schema Exports**: Export using `xxxTable` pattern (e.g., `topicTable`, `appStateTable`)
-- **Field Definition**: Drizzle auto-infers field names, no need to add default field names
-- **JSON Fields**: For JSON support, add `{ mode: 'json' }`, refer to `preference.ts` table definition
-- **JSON Serialization**: For JSON fields, no need to manually serialize/deserialize when reading/writing to database, Drizzle handles this automatically
-- **Timestamps**: Use existing `crudTimestamps` utility
-- **Migrations**: Generate via `yarn run migrations:generate`
+Files marked with the following header are **blocked for feature changes** (bug fixes only):
 
-## Data Access Patterns
+```typescript
+/**
+ * @deprecated Scheduled for removal in v2.0.0
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ */
+```
 
-The application uses three distinct data management systems. Choose the appropriate system based on data characteristics:
+The v2 branch is undergoing a major refactoring effort:
 
-### Cache System
-- **Purpose**: Temporary data that can be regenerated
-- **Lifecycle**: Component-level (memory), window-level (shared), or persistent (survives restart)
-- **Use Cases**: API response caching, computed results, temporary UI state
-- **APIs**: `useCache`, `useSharedCache`, `usePersistCache` hooks, or `cacheService`
+### Data Layer
 
-### Preference System
-- **Purpose**: User configuration and application settings
-- **Lifecycle**: Permanent until user changes
-- **Use Cases**: Theme, language, editor settings, user preferences
-- **APIs**: `usePreference`, `usePreferences` hooks, or `preferenceService`
+- **Removing**: Redux, Dexie
+- **Adopting**: Cache / Preference / DataApi architecture (see [Data Management](#data-management))
 
-### User Data API
-- **Purpose**: Core business data (conversations, files, notes, etc.)
-- **Lifecycle**: Permanent business records
-- **Use Cases**: Topics, messages, files, knowledge base, user-generated content
-- **APIs**: `useDataApi` hook or `dataApiService` for direct calls
+### UI Layer
 
-### Selection Guidelines
+- **Removing**: antd, HeroUI, styled-components
+- **Adopting**: `@cherrystudio/ui` (located in `packages/ui`, Tailwind CSS + Shadcn UI)
+- **Prohibited**: antd, HeroUI, styled-components
 
-- **Use Cache** for data that can be lost without impact (computed values, API responses)
-- **Use Preferences** for user settings that affect app behavior (UI configuration, feature flags)
-- **Use User Data API** for irreplaceable business data (conversations, documents, user content)
+### Data Classification Toolchain
+
+The `v2-refactor-temp/tools/data-classify/` directory contains the code generation pipeline for the v2 data layer. `classification.json` is the single source of truth.
+
+**Rule**: After modifying `classification.json` or `target-key-definitions.json`, you **MUST** run:
+
+```bash
+cd v2-refactor-temp/tools/data-classify && npm run generate
+```
+
+This regenerates the following TypeScript files:
+- `packages/shared/data/preference/preferenceSchemas.ts`
+- `packages/shared/data/bootConfig/bootConfigSchemas.ts`
+- `src/main/data/migration/v2/migrators/mappings/PreferencesMappings.ts`
+- `src/main/data/migration/v2/migrators/mappings/BootConfigMappings.ts`
+
+### File Naming Convention
+
+During migration, use `*.v2.ts` suffix for files not yet fully migrated:
+
+- Indicates work-in-progress refactoring
+- Avoids conflicts with existing code
+- **Post-completion**: These files will be renamed or merged into their final locations
 
 ## Logging Standards
 
 ### Usage
 
 ```typescript
-import { loggerService } from '@logger'
-const logger = loggerService.withContext('moduleName')
-// Renderer: loggerService.initWindowSource('windowName') first
-logger.info('message', CONTEXT)
+import { loggerService } from "@logger";
+const logger = loggerService.withContext("moduleName");
+// Renderer only: loggerService.initWindowSource('windowName') first
+logger.info("message", CONTEXT);
+logger.warn("message");
+logger.error("message", error);
 ```
+
+- Backend: Winston with daily log rotation
+- Log files at the platform-standard location via `app.getPath('logs')` (e.g., `~/Library/Logs/<App>/` on macOS)
+- Never use `console.log` — always use `loggerService`
+
+### Tracing (OpenTelemetry)
+
+- `packages/mcp-trace/` provides trace-core and trace-node/trace-web adapters
+- `NodeTraceService` exports spans via OTLP HTTP
+- `SpanCacheService` caches span entities for the trace viewer window
+- IPC calls can carry span context via `tracedInvoke()`
+
+## Path Management
+
+`application.getPath('namespace.key', filename?)` is the sole entry point for all main-process filesystem paths. Never call `app.getPath()`, `os.homedir()`, or construct paths ad-hoc.
+
+**MUST READ**: [src/main/core/paths/README.md](src/main/core/paths/README.md) — namespaces, naming, adding new keys, testing patterns.
+
+## Tech Stack
+
+| Layer         | Technologies                                         |
+| ------------- | ---------------------------------------------------- |
+| Runtime       | Electron 38, Node ≥22                                |
+| Frontend      | React 19, TypeScript ~5.8                            |
+| UI            | Ant Design 5.27, styled-components 6, TailwindCSS v4 |
+| State         | Redux Toolkit, redux-persist, Dexie (IndexedDB)      |
+| Rich Text     | TipTap 3.2 (with Yjs collaboration)                  |
+| AI SDK        | Vercel AI SDK v5 (`ai`), `@cherrystudio/ai-core`     |
+| Build         | electron-vite 5 with rolldown-vite 7 (experimental)  |
+| Test          | Vitest 3 (unit), Playwright (e2e)                    |
+| Lint/Format   | ESLint 9, oxlint, Biome 2                            |
+| DB (main)     | Drizzle ORM + LibSQL (SQLite)                        |
+| DB (renderer) | Dexie (IndexedDB)                                    |
+| Logging       | Winston + winston-daily-rotate-file                  |
+| Tracing       | OpenTelemetry                                        |
+| i18n          | i18next + react-i18next                              |
+
+## Conventions
+
+### TypeScript
+
+- Strict mode enabled; use `tsgo` (native TypeScript compiler preview) for typechecking
+- Separate configs: `tsconfig.node.json` (main), `tsconfig.web.json` (renderer)
+- Type definitions centralized in `src/renderer/src/types/` and `packages/shared/`
+
+### Code Style
+
+- Biome handles formatting (2-space indent, single quotes, trailing commas)
+- oxlint + ESLint for linting; `simple-import-sort` enforces import order
+- React hooks: `eslint-plugin-react-hooks` enforced
+- No unused imports: `eslint-plugin-unused-imports`
+
+### File Naming
+
+- React components: `PascalCase.tsx`
+- Services, hooks, utilities: `camelCase.ts`
+- Test files: `*.test.ts` or `*.spec.ts` alongside source or in `__tests__/` subdirectory
+
+### i18n
+
+- All user-visible strings must use `i18next` — never hardcode UI strings
+- Run `pnpm i18n:check` to validate; `pnpm i18n:sync` to add missing keys
+- Locale files in `src/renderer/src/i18n/`
+
+### Packages with Custom Patches
+
+Several dependencies have patches in `patches/` — be careful when upgrading:
+- `antd`, `@ai-sdk/google`, `@ai-sdk/openai`, `@anthropic-ai/vertex-sdk`
+- `@google/genai`, `@langchain/core`, `@langchain/openai`
+- `ollama-ai-provider-v2`, `electron-updater`, `epub`, `tesseract.js`
+- `@anthropic-ai/claude-agent-sdk`
+
+## Testing Guidelines
+
+- Tests use Vitest 3 with project-based configuration
+- Main process tests: Node environment, `tests/main.setup.ts`
+- Renderer tests: jsdom environment, `tests/renderer.setup.ts`, `@testing-library/react`
+- aiCore tests: separate `packages/aiCore/vitest.config.ts`
+- All tests run without CI dependency (fully local)
+- Coverage via v8 provider (`pnpm test:coverage`)
+- **Features without tests are not considered complete**
+- **Test Mocking**: Use the unified mock system — do NOT create ad-hoc mocks for `application`, services, or data layers. See [tests/__mocks__/README.md](tests/__mocks__/README.md) for available mocks, usage patterns, and best practices.
+
+## Important Notes
+
+### Security
+
+- Never expose Node.js APIs directly to renderer; use `contextBridge` in preload
+- Validate all IPC inputs in main process handlers
+- URL sanitization via `strict-url-sanitise`
+- IP validation via `ipaddr.js` (API server)
+- `express-validator` for API server request validation

@@ -9,16 +9,16 @@ This document outlines the detailed plan for migrating Cherry Studio from antd +
 ### Target Tech Stack
 
 - **UI Component Library**: shadcn/ui (replacing antd and previously migrated HeroUI)
-- **Styling Solution**: Tailwind CSS (replacing styled-components)
-- **Design System**: Custom CSS variable system (see [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md))
-- **Theme System**: CSS variables + shadcn/ui theme
+- **Styling Solution**: Tailwind CSS v4 (replacing styled-components)
+- **Design System**: Custom CSS variable system (`--cs-*` namespace)
+- **Theme System**: CSS variables + Tailwind CSS theme
 
 ### Migration Principles
 
 1. **Backward Compatibility**: Old components continue working until new components are fully available
 2. **Progressive Migration**: Migrate components one by one to avoid large-scale rewrites
 3. **Feature Parity**: Ensure new components have all the functionality of old components
-4. **Design Consistency**: Follow new design system specifications (see DESIGN_SYSTEM.md)
+4. **Design Consistency**: Follow new design system specifications (see [README.md](./README.md))
 5. **Performance Priority**: Optimize bundle size and rendering performance
 6. **Designer Collaboration**: Work with UI designers for gradual component encapsulation and UI optimization
 
@@ -105,7 +105,7 @@ When submitting PRs, please place components in the correct directory based on t
 
 | Phase | Status | Main Tasks | Description |
 | --- | --- | --- | --- |
-| **Phase 1** | 🚧 **In Progress** | **Design System Integration** | • Integrate design system CSS variables (todocss.css → design-tokens.css → globals.css)<br>• Configure Tailwind CSS to use custom design tokens<br>• Establish basic style guidelines and theme system |
+| **Phase 1** | ✅ **Completed** | **Design System Integration** | • Converted design tokens from todocss.css to tokens.css with `--cs-*` namespace<br>• Created theme.css mapping all design tokens to standard Tailwind classes<br>• Extended Tailwind with semantic spacing (5xs~8xl) and radius (4xs~3xl) systems<br>• Established two usage modes: full override and selective override<br>• Cleaned up main package's conflicting Shadcn theme definitions |
 | **Phase 2** | ⏳ **To Start** | **Component Migration and Optimization** | • Filter components for migration based on extraction criteria<br>• Remove antd dependencies, replace with shadcn/ui<br>• Remove HeroUI dependencies, replace with shadcn/ui<br>• Remove styled-components, replace with Tailwind CSS + design system variables<br>• Optimize component APIs and type definitions |
 | **Phase 3** | ⏳ **To Start** | **UI Refactoring and Optimization** | • Gradually implement UI refactoring with UI designers<br>• Ensure visual consistency and user experience<br>• Performance optimization and code quality improvement |
 
@@ -129,16 +129,22 @@ When submitting PRs, please place components in the correct directory based on t
 ## Design System Integration
 
 ### CSS Variable System
-- Refer to [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for complete design system planning
-- Design variables will be managed through CSS variable system, naming conventions TBD
-- Support theme switching and responsive design
+
+- All design tokens use `--cs-*` namespace (e.g., `--cs-primary`, `--cs-red-500`)
+- Complete color palette: 17 colors × 11 shades each
+- Semantic spacing system: `5xs` through `8xl` (16 levels)
+- Semantic radius system: `4xs` through `3xl` plus `round` (11 levels)
+- Full light/dark mode support
+- See [README.md](./README.md) for usage documentation
 
 ### Migration Priority Adjustment
+
 1. **High Priority**: Basic components (buttons, inputs, tags, etc.)
 2. **Medium Priority**: Display components (cards, lists, tables, etc.)
 3. **Low Priority**: Composite components and business-coupled components
 
 ### UI Designer Collaboration
+
 - All component designs need confirmation from UI designers
 - Gradually implement UI refactoring to maintain visual consistency
 - New components must comply with design system specifications

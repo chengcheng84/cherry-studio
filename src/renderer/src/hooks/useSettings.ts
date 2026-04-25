@@ -1,8 +1,19 @@
 /**
- * Data Refactor, notes by fullex
- * //TODO @deprecated this file will be removed
+ * @deprecated Scheduled for removal in v2.0.0
+ * --------------------------------------------------------------------------
+ * ⚠️ NOTICE: V2 DATA&UI REFACTORING (by 0xfullex)
+ * --------------------------------------------------------------------------
+ * STOP: Feature PRs affecting this file are currently BLOCKED.
+ * Only critical bug fixes are accepted during this migration phase.
+ *
+ * This file is being refactored to v2 standards.
+ * Any non-critical changes will conflict with the ongoing work.
+ *
+ * 🔗 Context & Status:
+ * - Contribution Hold: https://github.com/CherryHQ/cherry-studio/issues/10954
+ * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
+ * --------------------------------------------------------------------------
  */
-
 import { usePreference } from '@data/hooks/usePreference'
 import { useAppSelector } from '@renderer/store'
 import store from '@renderer/store'
@@ -21,39 +32,39 @@ export function useSettings() {
     // setLaunch(isLaunchOnBoot: boolean | undefined, isLaunchToTray: boolean | undefined = undefined) {
     //   if (isLaunchOnBoot !== undefined) {
     //     dispatch(setLaunchOnBoot(isLaunchOnBoot))
-    //     window.api.setLaunchOnBoot(isLaunchOnBoot)
+    //     void window.api.setLaunchOnBoot(isLaunchOnBoot)
     //   }
 
     //   if (isLaunchToTray !== undefined) {
     //     dispatch(setLaunchToTray(isLaunchToTray))
-    //     window.api.setLaunchToTray(isLaunchToTray)
+    //     void window.api.setLaunchToTray(isLaunchToTray)
     //   }
     // },
 
     // setTray(isShowTray: boolean | undefined, isTrayOnClose: boolean | undefined = undefined) {
     //   if (isShowTray !== undefined) {
     //     dispatch(_setTray(isShowTray))
-    //     window.api.setTray(isShowTray)
+    //     void window.api.setTray(isShowTray)
     //   }
     //   if (isTrayOnClose !== undefined) {
     //     dispatch(setTrayOnClose(isTrayOnClose))
-    //     window.api.setTrayOnClose(isTrayOnClose)
+    //     void window.api.setTrayOnClose(isTrayOnClose)
     //   }
     // },
 
     // setAutoCheckUpdate(isAutoUpdate: boolean) {
     //   dispatch(_setAutoCheckUpdate(isAutoUpdate))
-    //   window.api.setAutoUpdate(isAutoUpdate)
+    //   void window.api.setAutoUpdate(isAutoUpdate)
     // },
 
     // setTestPlan(isTestPlan: boolean) {
     //   dispatch(_setTestPlan(isTestPlan))
-    //   window.api.setTestPlan(isTestPlan)
+    //   void window.api.setTestPlan(isTestPlan)
     // },
 
     // setTestChannel(channel: UpgradeChannel) {
     //   dispatch(_setTestChannel(channel))
-    //   window.api.setTestChannel(channel)
+    //   void window.api.setTestChannel(channel)
     // },
 
     // setTheme(theme: ThemeMode) {
@@ -85,7 +96,11 @@ export function useSettings() {
     // }
     // setDisableHardwareAcceleration(disableHardwareAcceleration: boolean) {
     //   dispatch(setDisableHardwareAcceleration(disableHardwareAcceleration))
-    //   window.api.setDisableHardwareAcceleration(disableHardwareAcceleration)
+    //   void window.api.setDisableHardwareAcceleration(disableHardwareAcceleration)
+    // },
+    // setUseSystemTitleBar(useSystemTitleBar: boolean) {
+    //   dispatch(_setUseSystemTitleBar(useSystemTitleBar))
+    //   void window.api.setUseSystemTitleBar(useSystemTitleBar)
     // }
   }
 }
@@ -111,7 +126,7 @@ export const getStoreSetting = <K extends keyof SettingsState>(key: K): Settings
 //     enableDeveloperMode,
 //     setEnableDeveloperMode: (enableDeveloperMode: boolean) => {
 //       dispatch(setEnableDeveloperMode(enableDeveloperMode))
-//       window.api.config.set('enableDeveloperMode', enableDeveloperMode)
+//       void window.api.config.set('enableDeveloperMode', enableDeveloperMode)
 //     }
 //   }
 // }

@@ -2,17 +2,7 @@ import store from '@renderer/store'
 import type { VertexProvider } from '@renderer/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  formatApiHost,
-  formatApiKeys,
-  formatAzureOpenAIApiHost,
-  formatVertexApiHost,
-  hasAPIVersion,
-  maskApiKey,
-  routeToEndpoint,
-  splitApiKeyString,
-  validateApiHost
-} from '../api'
+import { formatVertexApiHost, maskApiKey, routeToEndpoint, splitApiKeyString, validateApiHost } from '../api'
 
 vi.mock('@renderer/store', () => {
   const getState = vi.fn()
@@ -55,55 +45,6 @@ beforeEach(() => {
 })
 
 describe('api', () => {
-  describe('formatApiHost', () => {
-    it('returns empty string for falsy host', () => {
-      expect(formatApiHost('')).toBe('')
-      expect(formatApiHost(undefined)).toBe('')
-    })
-
-    it('appends api version when missing', () => {
-      expect(formatApiHost('https://api.example.com')).toBe('https://api.example.com/v1')
-      expect(formatApiHost('http://localhost:5173/')).toBe('http://localhost:5173/v1')
-      expect(formatApiHost(' https://api.openai.com ')).toBe('https://api.openai.com/v1')
-    })
-
-    it('keeps original host when api version already present', () => {
-      expect(formatApiHost('https://api.volces.com/api/v3')).toBe('https://api.volces.com/api/v3')
-      expect(formatApiHost('http://localhost:5173/v2beta')).toBe('http://localhost:5173/v2beta')
-    })
-
-    it('supports custom api version parameter', () => {
-      expect(formatApiHost('https://api.example.com', true, 'v2')).toBe('https://api.example.com/v2')
-    })
-
-    it('keeps host untouched when api version unsupported', () => {
-      expect(formatApiHost('https://api.example.com', false)).toBe('https://api.example.com')
-    })
-  })
-
-  describe('hasAPIVersion', () => {
-    it('detects numeric version suffix', () => {
-      expect(hasAPIVersion('https://api.example.com/v1')).toBe(true)
-      expect(hasAPIVersion('http://localhost:3000/v2beta')).toBe(true)
-      expect(hasAPIVersion('/v3alpha/resources')).toBe(true)
-    })
-
-    it('returns false when no version found', () => {
-      expect(hasAPIVersion('https://api.example.com')).toBe(false)
-      expect(hasAPIVersion('')).toBe(false)
-      expect(hasAPIVersion(undefined)).toBe(false)
-    })
-
-    it('return flase when starting without v character', () => {
-      expect(hasAPIVersion('https://api.example.com/a1v')).toBe(false)
-      expect(hasAPIVersion('/av1/users')).toBe(false)
-    })
-
-    it('return flase when starting with v- word', () => {
-      expect(hasAPIVersion('https://api.example.com/vendor')).toBe(false)
-    })
-  })
-
   describe('maskApiKey', () => {
     it('should return empty string when key is empty', () => {
       expect(maskApiKey('')).toBe('')
@@ -256,27 +197,6 @@ describe('api', () => {
         baseURL: 'https://open.cherryin.net/v1beta/models/imagen-4.0-generate-001',
         endpoint: 'predict'
       })
-    })
-  })
-
-  describe('formatApiKeys', () => {
-    it('normalizes chinese commas and new lines', () => {
-      expect(formatApiKeys('key1，key2\nkey3')).toBe('key1,key2,key3')
-    })
-
-    it('returns empty string unchanged', () => {
-      expect(formatApiKeys('')).toBe('')
-    })
-  })
-
-  describe('formatAzureOpenAIApiHost', () => {
-    it('normalizes trailing segments and disables auto version append', () => {
-      expect(formatAzureOpenAIApiHost('https://example.openai.azure.com/')).toBe(
-        'https://example.openai.azure.com/openai'
-      )
-      expect(formatAzureOpenAIApiHost('https://example.openai.azure.com/openai/')).toBe(
-        'https://example.openai.azure.com/openai'
-      )
     })
   })
 

@@ -8,9 +8,8 @@ export enum IpcChannel {
   App_CheckForUpdate = 'app:check-for-update',
   App_QuitAndInstall = 'app:quit-and-install',
   App_Reload = 'app:reload',
-  App_Quit = 'app:quit',
+  Application_Quit = 'application:quit',
   App_Info = 'app:info',
-  App_Proxy = 'app:proxy',
   App_SetLaunchToTray = 'app:set-launch-to-tray',
   App_SetTray = 'app:set-tray',
   App_SetTrayOnClose = 'app:set-tray-on-close',
@@ -24,29 +23,35 @@ export enum IpcChannel {
   App_ResolvePath = 'app:resolve-path',
   App_IsPathInside = 'app:is-path-inside',
   App_Copy = 'app:copy',
-  App_SetStopQuitApp = 'app:set-stop-quit-app',
+  Application_PreventQuit = 'application:prevent-quit',
+  Application_AllowQuit = 'application:allow-quit',
   App_SetAppDataPath = 'app:set-app-data-path',
   App_GetDataPathFromArgs = 'app:get-data-path-from-args',
   App_FlushAppData = 'app:flush-app-data',
   App_IsNotEmptyDir = 'app:is-not-empty-dir',
-  App_RelaunchApp = 'app:relaunch-app',
+  Application_Relaunch = 'application:relaunch',
+  App_ResetData = 'app:reset-data',
   App_IsBinaryExist = 'app:is-binary-exist',
   App_GetBinaryPath = 'app:get-binary-path',
   App_InstallUvBinary = 'app:install-uv-binary',
   App_InstallBunBinary = 'app:install-bun-binary',
   App_InstallOvmsBinary = 'app:install-ovms-binary',
   App_LogToMain = 'app:log-to-main',
-  App_SaveData = 'app:save-data',
+  // [v2] Removed: Redux persistor flush is no longer needed after v2 data refactoring
+  // App_SaveData = 'app:save-data',
   App_GetDiskInfo = 'app:get-disk-info',
   App_SetFullScreen = 'app:set-full-screen',
   App_IsFullScreen = 'app:is-full-screen',
   App_GetSystemFonts = 'app:get-system-fonts',
+  App_GetIpCountry = 'app:get-ip-country',
+  APP_CrashRenderProcess = 'app:crash-render-process',
 
   App_MacIsProcessTrusted = 'app:mac-is-process-trusted',
   App_MacRequestProcessTrust = 'app:mac-request-process-trust',
 
   App_QuoteToMain = 'app:quote-to-main',
   // App_SetDisableHardwareAcceleration = 'app:set-disable-hardware-acceleration',
+  // App_SetUseSystemTitleBar = 'app:set-use-system-title-bar',
 
   Notification_Send = 'notification:send',
   Notification_OnClick = 'notification:on-click',
@@ -54,6 +59,8 @@ export enum IpcChannel {
   Webview_SetOpenLinkExternal = 'webview:set-open-link-external',
   Webview_SetSpellCheckEnabled = 'webview:set-spell-check-enabled',
   Webview_SearchHotkey = 'webview:search-hotkey',
+  Webview_PrintToPDF = 'webview:print-to-pdf',
+  Webview_SaveAsHTML = 'webview:save-as-html',
 
   // Open
   Open_Path = 'open:path',
@@ -87,8 +94,11 @@ export enum IpcChannel {
   Mcp_CheckConnectivity = 'mcp:check-connectivity',
   Mcp_UploadDxt = 'mcp:upload-dxt',
   Mcp_AbortTool = 'mcp:abort-tool',
+  Mcp_ResolveHubTool = 'mcp:resolve-hub-tool',
   Mcp_GetServerVersion = 'mcp:get-server-version',
   Mcp_Progress = 'mcp:progress',
+  Mcp_GetServerLogs = 'mcp:get-server-logs',
+  Mcp_ServerLog = 'mcp:server-log',
   // Python
   Python_Execute = 'python:execute',
 
@@ -100,6 +110,26 @@ export enum IpcChannel {
   AgentToolPermission_Response = 'agent-tool-permission:response',
   AgentToolPermission_Result = 'agent-tool-permission:result',
 
+  // Agent session stream (IM channel -> renderer real-time)
+  AgentSessionStream_Subscribe = 'agent-session-stream:subscribe',
+  AgentSessionStream_Unsubscribe = 'agent-session-stream:unsubscribe',
+  AgentSessionStream_Abort = 'agent-session-stream:abort',
+  AgentSessionStream_Chunk = 'agent-session-stream:chunk',
+  AgentSession_Changed = 'agent-session:changed',
+
+  // WeChat channel
+  WeChat_QrLogin = 'wechat:qr-login',
+  WeChat_HasCredentials = 'wechat:has-credentials',
+
+  // Feishu channel
+  Feishu_QrLogin = 'feishu:qr-login',
+
+  // Channel status & logs
+  Channel_StatusChange = 'channel:status-change',
+  Channel_Log = 'channel:log',
+  Channel_GetLogs = 'channel:get-logs',
+  Channel_GetStatuses = 'channel:get-statuses',
+
   //copilot
   Copilot_GetAuthMessage = 'copilot:get-auth-message',
   Copilot_GetCopilotToken = 'copilot:get-copilot-token',
@@ -107,6 +137,14 @@ export enum IpcChannel {
   Copilot_GetToken = 'copilot:get-token',
   Copilot_Logout = 'copilot:logout',
   Copilot_GetUser = 'copilot:get-user',
+
+  // CherryIN OAuth
+  CherryIN_SaveToken = 'cherryin:save-token',
+  CherryIN_HasToken = 'cherryin:has-token',
+  CherryIN_GetBalance = 'cherryin:get-balance',
+  CherryIN_Logout = 'cherryin:logout',
+  CherryIN_StartOAuthFlow = 'cherryin:start-oauth-flow',
+  CherryIN_ExchangeToken = 'cherryin:exchange-token',
 
   // obsidian
   Obsidian_GetVaults = 'obsidian:get-vaults',
@@ -144,6 +182,13 @@ export enum IpcChannel {
   Windows_MaximizedChanged = 'window:maximized-changed',
   Windows_NavigateToAbout = 'window:navigate-to-about',
 
+  // Tab
+  Tab_Attach = 'tab:attach',
+  Tab_Detach = 'tab:detach',
+  Tab_MoveWindow = 'tab:move-window',
+  Tab_TryAttach = 'tab:try-attach',
+  Tab_DragEnd = 'tab:drag-end',
+
   KnowledgeBase_Create = 'knowledge-base:create',
   KnowledgeBase_Reset = 'knowledge-base:reset',
   KnowledgeBase_Delete = 'knowledge-base:delete',
@@ -151,7 +196,11 @@ export enum IpcChannel {
   KnowledgeBase_Remove = 'knowledge-base:remove',
   KnowledgeBase_Search = 'knowledge-base:search',
   KnowledgeBase_Rerank = 'knowledge-base:rerank',
-  KnowledgeBase_Check_Quota = 'knowledge-base:check-quota',
+  KnowledgeRuntime_CreateBase = 'knowledge-runtime:create-base',
+  KnowledgeRuntime_DeleteBase = 'knowledge-runtime:delete-base',
+  KnowledgeRuntime_AddItems = 'knowledge-runtime:add-items',
+  KnowledgeRuntime_DeleteItems = 'knowledge-runtime:delete-items',
+  KnowledgeRuntime_Search = 'knowledge-runtime:search',
 
   //file
   File_Open = 'file:open',
@@ -189,12 +238,20 @@ export enum IpcChannel {
   Fs_ReadText = 'fs:readText',
   File_OpenWithRelativePath = 'file:openWithRelativePath',
   File_IsTextFile = 'file:isTextFile',
+  File_IsDirectory = 'file:isDirectory',
+  File_ListDirectory = 'file:listDirectory',
   File_GetDirectoryStructure = 'file:getDirectoryStructure',
   File_CheckFileName = 'file:checkFileName',
   File_ValidateNotesDirectory = 'file:validateNotesDirectory',
   File_StartWatcher = 'file:startWatcher',
   File_StopWatcher = 'file:stopWatcher',
+  File_PauseWatcher = 'file:pauseWatcher',
+  File_ResumeWatcher = 'file:resumeWatcher',
+  File_BatchUploadMarkdown = 'file:batchUploadMarkdown',
   File_ShowInFolder = 'file:showInFolder',
+
+  // PDF
+  Pdf_ExtractText = 'pdf:extractText',
 
   // file service
   FileService_Upload = 'file-service:upload',
@@ -224,6 +281,8 @@ export enum IpcChannel {
   Backup_ListS3Files = 'backup:listS3Files',
   Backup_DeleteS3File = 'backup:deleteS3File',
   Backup_CheckS3Connection = 'backup:checkS3Connection',
+  Backup_CreateLanTransferBackup = 'backup:createLanTransferBackup',
+  Backup_DeleteLanTransferBackup = 'backup:deleteLanTransferBackup',
 
   // data migration
   DataMigrate_CheckNeeded = 'data-migrate:check-needed',
@@ -238,8 +297,6 @@ export enum IpcChannel {
   DataMigrate_RetryMigration = 'data-migrate:retry-migration',
   DataMigrate_RestartApp = 'data-migrate:restart-app',
   DataMigrate_CloseWindow = 'data-migrate:close-window',
-  DataMigrate_SendReduxData = 'data-migrate:send-redux-data',
-  DataMigrate_GetReduxData = 'data-migrate:get-redux-data',
 
   // zip
   Zip_Compress = 'zip:compress',
@@ -249,6 +306,10 @@ export enum IpcChannel {
   System_GetDeviceType = 'system:getDeviceType',
   System_GetHostname = 'system:getHostname',
   System_GetCpuName = 'system:getCpuName',
+  System_CheckGitBash = 'system:checkGitBash',
+  System_GetGitBashPath = 'system:getGitBashPath',
+  System_GetGitBashPathInfo = 'system:getGitBashPathInfo',
+  System_SetGitBashPath = 'system:setGitBashPath',
 
   // DevTools
   System_ToggleDevTools = 'system:toggleDevTools',
@@ -272,19 +333,12 @@ export enum IpcChannel {
   HideMiniWindow = 'hide-mini-window',
   ShowMiniWindow = 'show-mini-window',
 
-  ReduxStateChange = 'redux-state-change',
   ReduxStoreReady = 'redux-store-ready',
 
   // Search Window
   SearchWindow_Open = 'search-window:open',
   SearchWindow_Close = 'search-window:close',
   SearchWindow_OpenUrl = 'search-window:open-url',
-
-  //Store Sync
-  StoreSync_Subscribe = 'store-sync:subscribe',
-  StoreSync_Unsubscribe = 'store-sync:unsubscribe',
-  StoreSync_OnUpdate = 'store-sync:on-update',
-  StoreSync_BroadcastSync = 'store-sync:broadcast-sync',
 
   // Provider
   Provider_AddKey = 'provider:add-key',
@@ -298,8 +352,11 @@ export enum IpcChannel {
   Selection_ActionWindowClose = 'selection:action-window-close',
   Selection_ActionWindowMinimize = 'selection:action-window-minimize',
   Selection_ActionWindowPin = 'selection:action-window-pin',
+  // [Windows only] Electron bug workaround - can be removed once https://github.com/electron/electron/issues/48554 is fixed
+  Selection_ActionWindowResize = 'selection:action-window-resize',
   Selection_ProcessAction = 'selection:process-action',
   Selection_UpdateActionData = 'selection:update-action-data',
+  Selection_GetLinuxEnvInfo = 'selection:get-linux-env-info',
 
   // Memory
   Memory_Add = 'memory:add',
@@ -312,11 +369,12 @@ export enum IpcChannel {
   Memory_DeleteUser = 'memory:delete-user',
   Memory_DeleteAllMemoriesForUser = 'memory:delete-all-memories-for-user',
   Memory_GetUsersList = 'memory:get-users-list',
+  Memory_MigrateMemoryDb = 'memory:migrate-memory-db',
 
   // Data: Preference
   Preference_Get = 'preference:get',
   Preference_Set = 'preference:set',
-  Preference_GetMultiple = 'preference:get-multiple',
+  Preference_GetMultipleRaw = 'preference:get-multiple-raw',
   Preference_SetMultiple = 'preference:set-multiple',
   Preference_GetAll = 'preference:get-all',
   Preference_Subscribe = 'preference:subscribe',
@@ -325,11 +383,10 @@ export enum IpcChannel {
   // Data: Cache
   Cache_Sync = 'cache:sync',
   Cache_SyncBatch = 'cache:sync-batch',
+  Cache_GetAllShared = 'cache:get-all-shared',
 
   // Data: API Channels
   DataApi_Request = 'data-api:request',
-  DataApi_Batch = 'data-api:batch',
-  DataApi_Transaction = 'data-api:transaction',
   DataApi_Subscribe = 'data-api:subscribe',
   DataApi_Unsubscribe = 'data-api:unsubscribe',
   DataApi_Stream = 'data-api:stream',
@@ -354,6 +411,7 @@ export enum IpcChannel {
   ApiServer_Stop = 'api-server:stop',
   ApiServer_Restart = 'api-server:restart',
   ApiServer_GetStatus = 'api-server:get-status',
+  ApiServer_Ready = 'api-server:ready',
   // NOTE: This api is not be used.
   ApiServer_GetConfig = 'api-server:get-config',
 
@@ -365,18 +423,22 @@ export enum IpcChannel {
   Anthropic_HasCredentials = 'anthropic:has-credentials',
   Anthropic_ClearCredentials = 'anthropic:clear-credentials',
 
-  // CodeTools
-  CodeTools_Run = 'code-tools:run',
-  CodeTools_GetAvailableTerminals = 'code-tools:get-available-terminals',
-  CodeTools_SetCustomTerminalPath = 'code-tools:set-custom-terminal-path',
-  CodeTools_GetCustomTerminalPath = 'code-tools:get-custom-terminal-path',
-  CodeTools_RemoveCustomTerminalPath = 'code-tools:remove-custom-terminal-path',
+  // ExternalApps
+  ExternalApps_DetectInstalled = 'external-apps:detect-installed',
+
+  // CodeCli
+  CodeCli_Run = 'code-cli:run',
+  CodeCli_GetAvailableTerminals = 'code-cli:get-available-terminals',
+  CodeCli_SetCustomTerminalPath = 'code-cli:set-custom-terminal-path',
+  CodeCli_GetCustomTerminalPath = 'code-cli:get-custom-terminal-path',
+  CodeCli_RemoveCustomTerminalPath = 'code-cli:remove-custom-terminal-path',
 
   // OCR
   OCR_ocr = 'ocr:ocr',
   OCR_ListProviders = 'ocr:list-providers',
 
   // OVMS
+  Ovms_IsSupported = 'ovms:is-supported',
   Ovms_AddModel = 'ovms:add-model',
   Ovms_StopAddModel = 'ovms:stop-addmodel',
   Ovms_GetModels = 'ovms:get-models',
@@ -388,12 +450,43 @@ export enum IpcChannel {
   // CherryAI
   Cherryai_GetSignature = 'cherryai:get-signature',
 
-  // Claude Code Plugins
-  ClaudeCodePlugin_ListAvailable = 'claudeCodePlugin:list-available',
-  ClaudeCodePlugin_Install = 'claudeCodePlugin:install',
-  ClaudeCodePlugin_Uninstall = 'claudeCodePlugin:uninstall',
-  ClaudeCodePlugin_ListInstalled = 'claudeCodePlugin:list-installed',
-  ClaudeCodePlugin_InvalidateCache = 'claudeCodePlugin:invalidate-cache',
-  ClaudeCodePlugin_ReadContent = 'claudeCodePlugin:read-content',
-  ClaudeCodePlugin_WriteContent = 'claudeCodePlugin:write-content'
+  // Global Skills
+  Skill_List = 'skill:list',
+  Skill_Install = 'skill:install',
+  Skill_Uninstall = 'skill:uninstall',
+  Skill_Toggle = 'skill:toggle',
+  Skill_InstallFromZip = 'skill:install-from-zip',
+  Skill_InstallFromDirectory = 'skill:install-from-directory',
+  Skill_ReadFile = 'skill:read-file',
+  Skill_ListFiles = 'skill:list-files',
+  Skill_ListLocal = 'skill:list-local',
+
+  // LAN Transfer
+  LanTransfer_ListServices = 'lan-transfer:list',
+  LanTransfer_StartScan = 'lan-transfer:start-scan',
+  LanTransfer_StopScan = 'lan-transfer:stop-scan',
+  LanTransfer_ServicesUpdated = 'lan-transfer:services-updated',
+  LanTransfer_Connect = 'lan-transfer:connect',
+  LanTransfer_Disconnect = 'lan-transfer:disconnect',
+  LanTransfer_ClientEvent = 'lan-transfer:client-event',
+  LanTransfer_SendFile = 'lan-transfer:send-file',
+  LanTransfer_CancelTransfer = 'lan-transfer:cancel-transfer',
+
+  // OpenClaw
+  OpenClaw_CheckInstalled = 'openclaw:check-installed',
+  OpenClaw_Install = 'openclaw:install',
+  OpenClaw_Uninstall = 'openclaw:uninstall',
+  OpenClaw_InstallProgress = 'openclaw:install-progress',
+  OpenClaw_StartGateway = 'openclaw:start-gateway',
+  OpenClaw_StopGateway = 'openclaw:stop-gateway',
+  OpenClaw_GetStatus = 'openclaw:get-status',
+  OpenClaw_CheckHealth = 'openclaw:check-health',
+  OpenClaw_GetDashboardUrl = 'openclaw:get-dashboard-url',
+  OpenClaw_SyncConfig = 'openclaw:sync-config',
+  OpenClaw_GetChannels = 'openclaw:get-channels',
+  OpenClaw_CheckUpdate = 'openclaw:check-update',
+  OpenClaw_PerformUpdate = 'openclaw:perform-update',
+
+  // Analytics
+  Analytics_TrackTokenUsage = 'analytics:track-token-usage'
 }

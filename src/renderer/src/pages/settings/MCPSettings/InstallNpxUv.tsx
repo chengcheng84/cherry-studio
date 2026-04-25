@@ -1,13 +1,12 @@
 import { CheckCircleOutlined, QuestionCircleOutlined, WarningOutlined } from '@ant-design/icons'
 import { Center, ColFlex } from '@cherrystudio/ui'
 import { Button } from '@cherrystudio/ui'
-import { useAppDispatch, useAppSelector } from '@renderer/store'
-import { setIsBunInstalled, setIsUvInstalled } from '@renderer/store/mcp'
+import { usePersistCache } from '@renderer/data/hooks/useCache'
+import { useNavigate } from '@tanstack/react-router'
 import { Alert } from 'antd'
 import type { FC } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router'
 import styled from 'styled-components'
 
 import { SettingDescription, SettingRow, SettingSubtitle } from '..'
@@ -17,9 +16,8 @@ interface Props {
 }
 
 const InstallNpxUv: FC<Props> = ({ mini = false }) => {
-  const dispatch = useAppDispatch()
-  const isUvInstalled = useAppSelector((state) => state.mcp.isUvInstalled)
-  const isBunInstalled = useAppSelector((state) => state.mcp.isBunInstalled)
+  const [isUvInstalled, setIsUvInstalled] = usePersistCache('feature.mcp.is_uv_installed')
+  const [isBunInstalled, setIsBunInstalled] = usePersistCache('feature.mcp.is_bun_installed')
 
   const [isInstallingUv, setIsInstallingUv] = useState(false)
   const [isInstallingBun, setIsInstallingBun] = useState(false)
@@ -38,23 +36,27 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
   }, [])
 
   const checkBinaries = useCallback(async () => {
-    const uvExists = await window.api.isBinaryExist('uv')
-    const bunExists = await window.api.isBinaryExist('bun')
-    const { uvPath, bunPath, dir } = await window.api.mcp.getInstallInfo()
+    try {
+      const uvExists = await window.api.isBinaryExist('uv')
+      const bunExists = await window.api.isBinaryExist('bun')
+      const { uvPath, bunPath, dir } = await window.api.mcp.getInstallInfo()
 
-    dispatch(setIsUvInstalled(uvExists))
-    dispatch(setIsBunInstalled(bunExists))
-    setUvPath(uvPath)
-    setBunPath(bunPath)
-    setBinariesDir(dir)
-  }, [dispatch])
+      setIsUvInstalled(uvExists)
+      setIsBunInstalled(bunExists)
+      setUvPath(uvPath)
+      setBunPath(bunPath)
+      setBinariesDir(dir)
+    } catch {
+      // IPC failure — leave previous values unchanged
+    }
+  }, [setIsUvInstalled, setIsBunInstalled])
 
   const installUV = async () => {
     try {
       setIsInstallingUv(true)
       await window.api.installUVBinary()
       setIsInstallingUv(false)
-      dispatch(setIsUvInstalled(true))
+      setIsUvInstalled(true)
     } catch (error: any) {
       window.toast.error(`${t('settings.mcp.installError')}: ${error.message}`)
       setIsInstallingUv(false)
@@ -68,7 +70,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       setIsInstallingBun(true)
       await window.api.installBunBinary()
       setIsInstallingBun(false)
-      dispatch(setIsBunInstalled(true))
+      setIsBunInstalled(true)
     } catch (error: any) {
       window.toast.error(`${t('settings.mcp.installError')}: ${error.message}`)
       setIsInstallingBun(false)
@@ -78,7 +80,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
   }
 
   useEffect(() => {
-    checkBinaries()
+    void checkBinaries()
   }, [checkBinaries])
 
   if (mini) {
@@ -87,7 +89,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       <Button
         className="nodrag rounded-full"
         variant={installed ? 'default' : 'destructive'}
-        onClick={() => navigate('/settings/mcp/mcp-install')}
+        onClick={() => navigate({ to: '/settings/mcp/mcp-install' })}
         size="icon">
         {installed ? <CheckCircleOutlined /> : <WarningOutlined />}
       </Button>
@@ -96,7 +98,7 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
 
   const openBinariesDir = () => {
     if (binariesDir) {
-      window.api.openPath(binariesDir)
+      void window.api.openPath(binariesDir)
     }
   }
 
@@ -108,7 +110,6 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
     <Container>
       <Alert
         type={isUvInstalled ? 'success' : 'warning'}
-        banner
         style={{ borderRadius: 'var(--list-item-border-radius)' }}
         description={
           <ColFlex>
@@ -134,7 +135,6 @@ const InstallNpxUv: FC<Props> = ({ mini = false }) => {
       />
       <Alert
         type={isBunInstalled ? 'success' : 'warning'}
-        banner
         style={{ borderRadius: 'var(--list-item-border-radius)' }}
         description={
           <ColFlex>

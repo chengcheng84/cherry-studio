@@ -1,76 +1,113 @@
-import { isMac } from '@main/constant'
-import { windowService } from '@main/services/WindowService'
+import { application } from '@main/core/application'
+import { BaseService, Conditional, Injectable, onPlatform, Phase, ServicePhase } from '@main/core/lifecycle'
 import { getAppLanguage, locales } from '@main/utils/language'
 import { IpcChannel } from '@shared/IpcChannel'
 import type { MenuItemConstructorOptions } from 'electron'
 import { app, Menu, shell } from 'electron'
-export class AppMenuService {
-  public setupApplicationMenu(): void {
+
+@Injectable('AppMenuService')
+@ServicePhase(Phase.WhenReady)
+@Conditional(onPlatform('darwin'))
+export class AppMenuService extends BaseService {
+  protected async onInit() {
+    const preferenceService = application.get('PreferenceService')
+    this.registerDisposable(preferenceService.subscribeChange('app.language', () => this.setupApplicationMenu()))
+    this.setupApplicationMenu()
+  }
+
+  private setupApplicationMenu(): void {
     const locale = locales[getAppLanguage()]
-    const { common } = locale.translation
+    const { appMenu } = locale.translation
 
     const template: MenuItemConstructorOptions[] = [
       {
         label: app.name,
         submenu: [
           {
-            label: common.about + ' ' + app.name,
+            label: appMenu.about + ' ' + app.name,
             click: () => {
-              // Emit event to navigate to About page
-              const mainWindow = windowService.getMainWindow()
+              const mainWindow = application.get('WindowService').getMainWindow()
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send(IpcChannel.Windows_NavigateToAbout)
-                windowService.showMainWindow()
+                application.get('WindowService').showMainWindow()
               }
             }
           },
           { type: 'separator' },
-          { role: 'services' },
+          { role: 'services', label: appMenu.services },
           { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
+          { role: 'hide', label: `${appMenu.hide} ${app.name}` },
+          { role: 'hideOthers', label: appMenu.hideOthers },
+          { role: 'unhide', label: appMenu.unhide },
           { type: 'separator' },
-          { role: 'quit' }
+          { role: 'quit', label: `${appMenu.quit} ${app.name}` }
         ]
       },
       {
-        role: 'fileMenu'
+        label: appMenu.file,
+        submenu: [{ role: 'close', label: appMenu.close }]
       },
       {
-        role: 'editMenu'
+        label: appMenu.edit,
+        submenu: [
+          { role: 'undo', label: appMenu.undo },
+          { role: 'redo', label: appMenu.redo },
+          { type: 'separator' },
+          { role: 'cut', label: appMenu.cut },
+          { role: 'copy', label: appMenu.copy },
+          { role: 'paste', label: appMenu.paste },
+          { role: 'delete', label: appMenu.delete },
+          { role: 'selectAll', label: appMenu.selectAll }
+        ]
       },
       {
-        role: 'viewMenu'
+        label: appMenu.view,
+        submenu: [
+          { role: 'reload', label: appMenu.reload },
+          { role: 'forceReload', label: appMenu.forceReload },
+          { role: 'toggleDevTools', label: appMenu.toggleDevTools },
+          { type: 'separator' },
+          { role: 'resetZoom', label: appMenu.resetZoom },
+          { role: 'zoomIn', label: appMenu.zoomIn },
+          { role: 'zoomOut', label: appMenu.zoomOut },
+          { type: 'separator' },
+          { role: 'togglefullscreen', label: appMenu.toggleFullscreen }
+        ]
       },
       {
-        role: 'windowMenu'
+        label: appMenu.window,
+        submenu: [
+          { role: 'minimize', label: appMenu.minimize },
+          { role: 'zoom', label: appMenu.zoom },
+          { type: 'separator' },
+          { role: 'front', label: appMenu.front }
+        ]
       },
       {
-        role: 'help',
+        label: appMenu.help,
         submenu: [
           {
-            label: 'Website',
+            label: appMenu.website,
             click: () => {
-              shell.openExternal('https://cherry-ai.com')
+              void shell.openExternal('https://cherry-ai.com')
             }
           },
           {
-            label: 'Documentation',
+            label: appMenu.documentation,
             click: () => {
-              shell.openExternal('https://cherry-ai.com/docs')
+              void shell.openExternal('https://cherry-ai.com/docs')
             }
           },
           {
-            label: 'Feedback',
+            label: appMenu.feedback,
             click: () => {
-              shell.openExternal('https://github.com/CherryHQ/cherry-studio/issues/new/choose')
+              void shell.openExternal('https://github.com/CherryHQ/cherry-studio/issues/new/choose')
             }
           },
           {
-            label: 'Releases',
+            label: appMenu.releases,
             click: () => {
-              shell.openExternal('https://github.com/CherryHQ/cherry-studio/releases')
+              void shell.openExternal('https://github.com/CherryHQ/cherry-studio/releases')
             }
           }
         ]
@@ -81,5 +118,3 @@ export class AppMenuService {
     Menu.setApplicationMenu(menu)
   }
 }
-
-export const appMenuService = isMac ? new AppMenuService() : null

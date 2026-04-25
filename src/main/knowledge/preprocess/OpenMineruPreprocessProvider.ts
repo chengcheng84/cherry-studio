@@ -17,10 +17,7 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
     super(provider, userId)
   }
 
-  public async parseFile(
-    sourceId: string,
-    file: FileMetadata
-  ): Promise<{ processedFile: FileMetadata; quota: number }> {
+  public async parseFile(sourceId: string, file: FileMetadata): Promise<{ processedFile: FileMetadata }> {
     try {
       const filePath = fileStorage.getFilePathById(file)
       logger.info(`Open MinerU preprocess processing started: ${filePath}`)
@@ -33,13 +30,9 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
       // 2. Upload file and extract
       const { path: outputPath } = await this.uploadFileAndExtract(file)
 
-      // 3. Check quota
-      const quota = await this.checkQuota()
-
-      // 4. Create processed file info
+      // 3. Create processed file info
       return {
-        processedFile: this.createProcessedFileInfo(file, outputPath),
-        quota
+        processedFile: this.createProcessedFileInfo(file, outputPath)
       }
     } catch (error) {
       logger.error(`Open MinerU preprocess processing failed for:`, error as Error)
@@ -47,24 +40,44 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
     }
   }
 
-  public async checkQuota() {
-    // self-hosted version always has enough quota
-    return Infinity
-  }
-
   private async validateFile(filePath: string): Promise<void> {
+    // 第一阶段:检查文件大小(无需读取文件到内存)
+    logger.info(`Validating PDF file: ${filePath}`)
+    const stats = await fs.promises.stat(filePath)
+    const fileSizeBytes = stats.size
+
+    // File size must be less than 200MB
+    if (fileSizeBytes >= 200 * 1024 * 1024) {
+      const fileSizeMB = Math.round(fileSizeBytes / (1024 * 1024))
+      throw new Error(`PDF file size (${fileSizeMB}MB) exceeds the limit of 200MB`)
+    }
+
+    // 第二阶段:检查页数(需要读取文件,带错误处理)
     const pdfBuffer = await fs.promises.readFile(filePath)
 
-    const doc = await this.readPdf(pdfBuffer)
+    try {
+      const doc = await this.readPdf(pdfBuffer)
 
-    // File page count must be less than 600 pages
-    if (doc.numPages >= 600) {
-      throw new Error(`PDF page count (${doc.numPages}) exceeds the limit of 600 pages`)
-    }
-    // File size must be less than 200MB
-    if (pdfBuffer.length >= 200 * 1024 * 1024) {
-      const fileSizeMB = Math.round(pdfBuffer.length / (1024 * 1024))
-      throw new Error(`PDF file size (${fileSizeMB}MB) exceeds the limit of 200MB`)
+      // File page count must be less than 600 pages
+      if (doc.numPages >= 600) {
+        throw new Error(`PDF page count (${doc.numPages}) exceeds the limit of 600 pages`)
+      }
+
+      logger.info(`PDF validation passed: ${doc.numPages} pages, ${Math.round(fileSizeBytes / (1024 * 1024))}MB`)
+    } catch (error: any) {
+      // 如果是页数超限错误,直接抛出
+      if (error.message.includes('exceeds the limit')) {
+        throw error
+      }
+
+      // PDF 解析失败,记录详细警告但允许继续处理
+      logger.warn(
+        `Failed to parse PDF structure (file may be corrupted or use non-standard format). ` +
+          `Skipping page count validation. Will attempt to process with MinerU API. ` +
+          `Error details: ${error.message}. ` +
+          `Suggestion: If processing fails, try repairing the PDF using tools like Adobe Acrobat or online PDF repair services.`
+      )
+      // 不抛出错误,允许继续处理
     }
   }
 
@@ -72,8 +85,8 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
     // Find the main file after extraction
     let finalPath = ''
     let finalName = file.origin_name.replace('.pdf', '.md')
-    // Find the corresponding folder by file name
-    outputPath = path.join(outputPath, `${file.origin_name.replace('.pdf', '')}`)
+    // Find the corresponding folder by file id
+    outputPath = path.join(outputPath, file.id)
     try {
       const files = fs.readdirSync(outputPath)
 
@@ -125,7 +138,7 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
     formData.append('return_md', 'true')
     formData.append('response_format_zip', 'true')
     formData.append('files', fileBuffer, {
-      filename: file.origin_name
+      filename: file.name
     })
 
     while (retries < maxRetries) {
@@ -139,7 +152,7 @@ export default class OpenMineruPreprocessProvider extends BasePreprocessProvider
             ...(this.provider.apiKey ? { Authorization: `Bearer ${this.provider.apiKey}` } : {}),
             ...formData.getHeaders()
           },
-          body: formData.getBuffer()
+          body: new Uint8Array(formData.getBuffer())
         })
 
         if (!response.ok) {

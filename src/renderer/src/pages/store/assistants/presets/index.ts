@@ -28,7 +28,7 @@ export const getAgentsFromSystemAgents = (systemAgents: any) => {
 export function useSystemAssistantPresets() {
   const { defaultAgent: defaultPreset } = useSettings()
   const [presets, setPresets] = useState<AssistantPreset[]>([])
-  const resourcesPath = cacheService.get('resourcesPath') ?? ''
+  const resourcesPath = cacheService.get('app.path.resources') ?? ''
   const { agentssubscribeUrl } = store.getState().settings
   const { i18n } = useTranslation()
   const currentLanguage = i18n.language
@@ -72,7 +72,7 @@ export function useSystemAssistantPresets() {
       }
     }
 
-    loadAgents()
+    void loadAgents()
   }, [defaultPreset, resourcesPath, agentssubscribeUrl, currentLanguage])
 
   return presets

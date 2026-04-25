@@ -2,15 +2,14 @@ import { randomUUID } from 'node:crypto'
 
 import type { PermissionResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import { loggerService } from '@logger'
+import { application } from '@main/core/application'
 import { IpcChannel } from '@shared/IpcChannel'
 import { ipcMain } from 'electron'
 
-import { windowService } from '../../../WindowService'
 import { builtinTools } from './tools'
 
 const logger = loggerService.withContext('ClaudeCodeService')
 
-const TOOL_APPROVAL_TIMEOUT_MS = 30_000
 const MAX_PREVIEW_LENGTH = 2_000
 const shouldAutoApproveTools = process.env.CHERRY_AUTO_ALLOW_TOOLS === '1'
 
@@ -26,24 +25,25 @@ type ToolPermissionResponsePayload = {
 
 type PendingPermissionRequest = {
   fulfill: (update: PermissionResult) => void
-  timeout: NodeJS.Timeout
   signal?: AbortSignal
   abortListener?: () => void
   originalInput: Record<string, unknown>
   toolName: string
+  toolCallId?: string
 }
 
 type RendererPermissionRequestPayload = {
   requestId: string
   toolName: string
   toolId: string
+  toolCallId: string
   description?: string
   requiresPermissions: boolean
   input: Record<string, unknown>
   inputPreview: string
   createdAt: number
-  expiresAt: number
   suggestions: PermissionUpdate[]
+  autoApprove?: boolean
 }
 
 type RendererPermissionResultPayload = {
@@ -51,6 +51,8 @@ type RendererPermissionResultPayload = {
   behavior: ToolPermissionBehavior
   message?: string
   reason: 'response' | 'timeout' | 'aborted' | 'no-window'
+  toolCallId?: string
+  updatedInput?: Record<string, unknown>
 }
 
 const pendingRequests = new Map<string, PendingPermissionRequest>()
@@ -97,7 +99,7 @@ const broadcastToRenderer = (
   channel: IpcChannel,
   payload: RendererPermissionRequestPayload | RendererPermissionResultPayload
 ): boolean => {
-  const mainWindow = windowService.getMainWindow()
+  const mainWindow = application.get('WindowService').getMainWindow()
 
   if (!mainWindow) {
     logger.warn('Unable to send agent tool permission payload – main window unavailable', {
@@ -132,7 +134,6 @@ const finalizeRequest = (
   })
 
   pendingRequests.delete(requestId)
-  clearTimeout(pending.timeout)
 
   if (pending.signal && pending.abortListener) {
     pending.signal.removeEventListener('abort', pending.abortListener)
@@ -144,7 +145,9 @@ const finalizeRequest = (
     requestId,
     behavior: update.behavior,
     message: update.behavior === 'deny' ? update.message : undefined,
-    reason
+    reason,
+    toolCallId: pending.toolCallId,
+    updatedInput: update.behavior === 'allow' ? update.updatedInput : undefined
   }
 
   const dispatched = broadcastToRenderer(IpcChannel.AgentToolPermission_Result, resultPayload)
@@ -206,10 +209,20 @@ const ensureIpcHandlersRegistered = () => {
   })
 }
 
+type PromptForToolApprovalOptions = {
+  signal: AbortSignal
+  suggestions?: PermissionUpdate[]
+  autoApprove?: boolean
+
+  // NOTICE: This ID is namespaced with session ID, not the raw SDK tool call ID.
+  // Format: `${sessionId}:${rawToolCallId}`, e.g., `session_123:WebFetch_0`
+  toolCallId: string
+}
+
 export async function promptForToolApproval(
   toolName: string,
   input: Record<string, unknown>,
-  options?: { signal: AbortSignal; suggestions?: PermissionUpdate[] }
+  options: PromptForToolApprovalOptions
 ): Promise<PermissionResult> {
   if (shouldAutoApproveTools) {
     logger.debug('promptForToolApproval auto-approving tool for test', {
@@ -226,7 +239,7 @@ export async function promptForToolApproval(
     return { behavior: 'deny', message: 'Tool request was cancelled before prompting the user' }
   }
 
-  const mainWindow = windowService.getMainWindow()
+  const mainWindow = application.get('WindowService').getMainWindow()
 
   if (!mainWindow) {
     logger.warn('Denying tool usage because no renderer window is available to obtain approval', { toolName })
@@ -240,11 +253,10 @@ export async function promptForToolApproval(
 
   const requestId = randomUUID()
   const createdAt = Date.now()
-  const expiresAt = createdAt + TOOL_APPROVAL_TIMEOUT_MS
-
   logger.info('Requesting user approval for tool usage', {
     requestId,
     toolName,
+    toolCallId: options.toolCallId,
     description: toolMetadata?.description
   })
 
@@ -252,13 +264,14 @@ export async function promptForToolApproval(
     requestId,
     toolName,
     toolId: toolMetadata?.id ?? toolName,
+    toolCallId: options.toolCallId,
     description: toolMetadata?.description,
     requiresPermissions: toolMetadata?.requirePermissions ?? false,
     input: sanitizedInput,
     inputPreview,
     createdAt,
-    expiresAt,
-    suggestions: sanitizedSuggestions
+    suggestions: sanitizedSuggestions,
+    autoApprove: options.autoApprove
   }
 
   const defaultDenyUpdate: PermissionResult = { behavior: 'deny', message: 'Tool request aborted before user decision' }
@@ -266,28 +279,27 @@ export async function promptForToolApproval(
   logger.debug('Registering tool permission request', {
     requestId,
     toolName,
+    toolCallId: options.toolCallId,
     requiresPermissions: requestPayload.requiresPermissions,
-    timeoutMs: TOOL_APPROVAL_TIMEOUT_MS,
     suggestionCount: sanitizedSuggestions.length
   })
 
   return new Promise<PermissionResult>((resolve) => {
-    const timeout = setTimeout(() => {
-      logger.info('User tool permission request timed out', { requestId, toolName })
-      finalizeRequest(requestId, { behavior: 'deny', message: 'Timed out waiting for approval' }, 'timeout')
-    }, TOOL_APPROVAL_TIMEOUT_MS)
-
     const pending: PendingPermissionRequest = {
       fulfill: resolve,
-      timeout,
       originalInput: sanitizedInput,
       toolName,
-      signal: options?.signal
+      signal: options?.signal,
+      toolCallId: options.toolCallId
     }
 
     if (options?.signal) {
       const abortListener = () => {
-        logger.info('Tool permission request aborted before user responded', { requestId, toolName })
+        logger.info('Tool permission request aborted before user responded', {
+          requestId,
+          toolName,
+          toolCallId: options.toolCallId
+        })
         finalizeRequest(requestId, defaultDenyUpdate, 'aborted')
       }
 

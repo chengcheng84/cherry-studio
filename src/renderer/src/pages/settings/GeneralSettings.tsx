@@ -3,6 +3,7 @@ import { Flex } from '@cherrystudio/ui'
 import { Switch } from '@cherrystudio/ui'
 import { useMultiplePreferences, usePreference } from '@data/hooks/usePreference'
 import Selector from '@renderer/components/Selector'
+import { isMac } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
 import i18n from '@renderer/i18n'
@@ -18,10 +19,27 @@ import { useTranslation } from 'react-i18next'
 
 import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingRowTitle, SettingTitle } from '.'
 
+type SpellCheckOption = { readonly value: string; readonly label: string; readonly flag: string }
+
+// Define available spell check languages with display names (only commonly supported languages)
+const spellCheckLanguageOptions: readonly SpellCheckOption[] = [
+  { value: 'en-US', label: 'English (US)', flag: '🇺🇸' },
+  { value: 'es', label: 'Español', flag: '🇪🇸' },
+  { value: 'fr', label: 'Français', flag: '🇫🇷' },
+  { value: 'de', label: 'Deutsch', flag: '🇩🇪' },
+  { value: 'it', label: 'Italiano', flag: '🇮🇹' },
+  { value: 'pt', label: 'Português', flag: '🇵🇹' },
+  { value: 'ru', label: 'Русский', flag: '🇷🇺' },
+  { value: 'nl', label: 'Nederlands', flag: '🇳🇱' },
+  { value: 'pl', label: 'Polski', flag: '🇵🇱' },
+  { value: 'sk', label: 'Slovenčina', flag: '🇸🇰' },
+  { value: 'el', label: 'Ελληνικά', flag: '🇬🇷' }
+]
+
 const GeneralSettings: FC = () => {
   const [language, setLanguage] = usePreference('app.language')
   const [disableHardwareAcceleration, setDisableHardwareAcceleration] = usePreference(
-    'app.disable_hardware_acceleration'
+    'BootConfig.app.disable_hardware_acceleration'
   )
   const [enableDeveloperMode, setEnableDeveloperMode] = usePreference('app.developer_mode.enabled')
   const [launchOnBoot, setLaunchOnBoot] = usePreference('app.launch_on_boot')
@@ -46,7 +64,7 @@ const GeneralSettings: FC = () => {
   const { setTimeoutTimer } = useTimer()
 
   const updateTray = (isShowTray: boolean) => {
-    setTray(isShowTray)
+    void setTray(isShowTray)
     //only set tray on close/launch to tray when tray is enabled
     if (!isShowTray) {
       updateTrayOnClose(false)
@@ -55,7 +73,7 @@ const GeneralSettings: FC = () => {
   }
 
   const updateTrayOnClose = (isTrayOnClose: boolean) => {
-    setTrayOnClose(isTrayOnClose)
+    void setTrayOnClose(isTrayOnClose)
     //in case tray is not enabled, enable it
     if (isTrayOnClose && !tray) {
       updateTray(true)
@@ -63,11 +81,11 @@ const GeneralSettings: FC = () => {
   }
 
   const updateLaunchOnBoot = (isLaunchOnBoot: boolean) => {
-    setLaunchOnBoot(isLaunchOnBoot)
+    void setLaunchOnBoot(isLaunchOnBoot)
   }
 
   const updateLaunchToTray = (isLaunchToTray: boolean) => {
-    setLaunchToTray(isLaunchToTray)
+    void setLaunchToTray(isLaunchToTray)
     if (isLaunchToTray && !tray) {
       updateTray(true)
     }
@@ -79,14 +97,14 @@ const GeneralSettings: FC = () => {
   const onSelectLanguage = (value: LanguageVarious) => {
     // dispatch(setLanguage(value))
     // localStorage.setItem('language', value)
-    // window.api.setLanguage(value)
-    i18n.changeLanguage(value)
-    setLanguage(value)
+    // void window.api.setLanguage(value)
+    void i18n.changeLanguage(value)
+    void setLanguage(value)
   }
 
   const handleSpellCheckChange = (checked: boolean) => {
-    setEnableSpellCheck(checked)
-    window.api.setEnableSpellCheck(checked)
+    void setEnableSpellCheck(checked)
+    void window.api.setEnableSpellCheck(checked)
   }
 
   const onSetProxyUrl = () => {
@@ -95,11 +113,11 @@ const GeneralSettings: FC = () => {
       return
     }
 
-    _setProxyUrl(proxyUrl)
+    void _setProxyUrl(proxyUrl)
   }
 
   const onSetProxyBypassRules = () => {
-    _setProxyBypassRules(proxyBypassRules)
+    void _setProxyBypassRules(proxyBypassRules)
   }
 
   const proxyModeOptions: { value: 'system' | 'custom' | 'none'; label: string }[] = [
@@ -109,7 +127,7 @@ const GeneralSettings: FC = () => {
   ]
 
   const onProxyModeChange = (mode: 'system' | 'custom' | 'none') => {
-    setProxyMode(mode)
+    void setProxyMode(mode)
   }
 
   const languagesOptions: { value: LanguageVarious; label: string; flag: string }[] = [
@@ -122,29 +140,16 @@ const GeneralSettings: FC = () => {
     { value: 'el-GR', label: 'Ελληνικά', flag: '🇬🇷' },
     { value: 'es-ES', label: 'Español', flag: '🇪🇸' },
     { value: 'fr-FR', label: 'Français', flag: '🇫🇷' },
-    { value: 'pt-PT', label: 'Português', flag: '🇵🇹' }
+    { value: 'pt-PT', label: 'Português', flag: '🇵🇹' },
+    { value: 'ro-RO', label: 'Română', flag: '🇷🇴' }
   ]
 
   const handleNotificationChange = (type: NotificationSource, value: boolean) => {
-    setNotificationSettings({ [type]: value })
+    void setNotificationSettings({ [type]: value })
   }
 
-  // Define available spell check languages with display names (only commonly supported languages)
-  const spellCheckLanguageOptions = [
-    { value: 'en-US', label: 'English (US)', flag: '🇺🇸' },
-    { value: 'es', label: 'Español', flag: '🇪🇸' },
-    { value: 'fr', label: 'Français', flag: '🇫🇷' },
-    { value: 'de', label: 'Deutsch', flag: '🇩🇪' },
-    { value: 'it', label: 'Italiano', flag: '🇮🇹' },
-    { value: 'pt', label: 'Português', flag: '🇵🇹' },
-    { value: 'ru', label: 'Русский', flag: '🇷🇺' },
-    { value: 'nl', label: 'Nederlands', flag: '🇳🇱' },
-    { value: 'pl', label: 'Polski', flag: '🇵🇱' },
-    { value: 'el', label: 'Ελληνικά', flag: '🇬🇷' }
-  ]
-
   const handleSpellCheckLanguagesChange = (selectedLanguages: string[]) => {
-    setSpellCheckLanguages(selectedLanguages)
+    void setSpellCheckLanguages(selectedLanguages)
   }
 
   const handleHardwareAccelerationChange = (checked: boolean) => {
@@ -156,7 +161,7 @@ const GeneralSettings: FC = () => {
       centered: true,
       onOk() {
         try {
-          setDisableHardwareAcceleration(checked)
+          void setDisableHardwareAcceleration(checked)
         } catch (error) {
           window.toast.error(formatErrorMessage(error))
           return
@@ -166,7 +171,7 @@ const GeneralSettings: FC = () => {
         setTimeoutTimer(
           'handleHardwareAccelerationChange',
           () => {
-            window.api.relaunchApp()
+            void window.api.application.relaunch()
           },
           500
         )
@@ -247,7 +252,7 @@ const GeneralSettings: FC = () => {
         <SettingRow>
           <RowFlex className="mr-4 flex-1 items-center justify-between">
             <SettingRowTitle>{t('settings.general.spell_check.label')}</SettingRowTitle>
-            {enableSpellCheck && (
+            {enableSpellCheck && !isMac && (
               <Selector<string>
                 size={14}
                 multiple
@@ -268,12 +273,12 @@ const GeneralSettings: FC = () => {
               />
             )}
           </RowFlex>
-          <Switch isSelected={enableSpellCheck} onValueChange={handleSpellCheckChange} />
+          <Switch checked={enableSpellCheck} onCheckedChange={handleSpellCheckChange} />
         </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.hardware_acceleration.title')}</SettingRowTitle>
-          <Switch isSelected={disableHardwareAcceleration} onValueChange={handleHardwareAccelerationChange} />
+          <Switch checked={disableHardwareAcceleration} onCheckedChange={handleHardwareAccelerationChange} />
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
@@ -289,24 +294,24 @@ const GeneralSettings: FC = () => {
             />
           </SettingRowTitle>
           <Switch
-            isSelected={notificationSettings.assistant}
-            onValueChange={(v) => handleNotificationChange('assistant', v)}
+            checked={notificationSettings.assistant}
+            onCheckedChange={(v) => handleNotificationChange('assistant', v)}
           />
         </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.notification.backup')}</SettingRowTitle>
           <Switch
-            isSelected={notificationSettings.backup}
-            onValueChange={(v) => handleNotificationChange('backup', v)}
+            checked={notificationSettings.backup}
+            onCheckedChange={(v) => handleNotificationChange('backup', v)}
           />
         </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.notification.knowledge_embed')}</SettingRowTitle>
           <Switch
-            isSelected={notificationSettings.knowledge}
-            onValueChange={(v) => handleNotificationChange('knowledge', v)}
+            checked={notificationSettings.knowledge}
+            onCheckedChange={(v) => handleNotificationChange('knowledge', v)}
           />
         </SettingRow>
       </SettingGroup>
@@ -315,12 +320,12 @@ const GeneralSettings: FC = () => {
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.launch.onboot')}</SettingRowTitle>
-          <Switch isSelected={launchOnBoot} onValueChange={(checked) => updateLaunchOnBoot(checked)} />
+          <Switch checked={launchOnBoot} onCheckedChange={(checked) => updateLaunchOnBoot(checked)} />
         </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.launch.totray')}</SettingRowTitle>
-          <Switch isSelected={launchToTray} onValueChange={(checked) => updateLaunchToTray(checked)} />
+          <Switch checked={launchToTray} onCheckedChange={(checked) => updateLaunchToTray(checked)} />
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
@@ -328,12 +333,12 @@ const GeneralSettings: FC = () => {
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.tray.show')}</SettingRowTitle>
-          <Switch isSelected={tray} onValueChange={(checked) => updateTray(checked)} />
+          <Switch checked={tray} onCheckedChange={(checked) => updateTray(checked)} />
         </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.tray.onclose')}</SettingRowTitle>
-          <Switch isSelected={trayOnClose} onValueChange={(checked) => updateTrayOnClose(checked)} />
+          <Switch checked={trayOnClose} onCheckedChange={(checked) => updateTrayOnClose(checked)} />
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
@@ -342,10 +347,10 @@ const GeneralSettings: FC = () => {
         <SettingRow>
           <SettingRowTitle>{t('settings.privacy.enable_privacy_mode')}</SettingRowTitle>
           <Switch
-            isSelected={enableDataCollection}
-            onValueChange={(v) => {
-              setEnableDataCollection(v)
-              window.api.config.set('enableDataCollection', v)
+            checked={enableDataCollection}
+            onCheckedChange={(v) => {
+              void setEnableDataCollection(v)
+              void window.api.config.set('enableDataCollection', v)
             }}
           />
         </SettingRow>
@@ -358,7 +363,7 @@ const GeneralSettings: FC = () => {
             <SettingRowTitle>{t('settings.developer.enable_developer_mode')}</SettingRowTitle>
             <InfoTooltip content={t('settings.developer.help')} />
           </Flex>
-          <Switch isSelected={enableDeveloperMode} onValueChange={setEnableDeveloperMode} />
+          <Switch checked={enableDeveloperMode} onCheckedChange={setEnableDeveloperMode} />
         </SettingRow>
       </SettingGroup>
     </SettingContainer>

@@ -102,9 +102,22 @@ export const captureScrollable = async (elRef: React.RefObject<HTMLElement | nul
         return Promise.reject()
       }
 
+      const filterHiddenElements = (node: Node) => {
+        if (node instanceof HTMLElement) {
+          if (node.style.display === 'none') {
+            return false
+          }
+          if (window.getComputedStyle(node).display === 'none') {
+            return false
+          }
+        }
+        return true
+      }
+
       const canvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
         htmlToImage
           .toCanvas(el, {
+            filter: filterHiddenElements,
             backgroundColor: getComputedStyle(el).getPropertyValue('--color-background'),
             cacheBust: true,
             pixelRatio: window.devicePixelRatio,
@@ -295,7 +308,7 @@ export async function captureScrollableIframe(
   let injectedFontStyle: HTMLStyleElement | null = null
 
   const ensureFontStyle = (css: string): HTMLStyleElement => {
-    const EXISTING = doc.head.querySelector('style[data-cs-inline-fonts="true"]') as HTMLStyleElement | null
+    const EXISTING = doc.head.querySelector<HTMLStyleElement>('style[data-cs-inline-fonts="true"]')
     if (EXISTING) {
       if (css && css.trim()) {
         EXISTING.textContent = `${EXISTING.textContent || ''}\n${css}`
@@ -565,4 +578,55 @@ export const makeSvgSizeAdaptive = (element: Element): Element => {
   element.removeAttribute('preserveAspectRatio')
 
   return element
+}
+
+/**
+ * 将图片 Blob 转换为 PNG 格式的 Blob
+ * @param blob 原始图片 Blob
+ * @returns Promise<Blob> 转换后的 PNG Blob
+ */
+export const convertImageToPng = async (blob: Blob): Promise<Blob> => {
+  if (blob.type === 'image/png') {
+    return blob
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(blob)
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+
+        if (!ctx) {
+          URL.revokeObjectURL(url)
+          reject(new Error('Failed to get canvas context'))
+          return
+        }
+
+        ctx.drawImage(img, 0, 0)
+        canvas.toBlob((pngBlob) => {
+          URL.revokeObjectURL(url)
+          if (pngBlob) {
+            resolve(pngBlob)
+          } else {
+            reject(new Error('Failed to convert image to png'))
+          }
+        }, 'image/png')
+      } catch (error) {
+        URL.revokeObjectURL(url)
+        reject(error)
+      }
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load image for conversion'))
+    }
+
+    img.src = url
+  })
 }

@@ -7,19 +7,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { PersistGate } from 'redux-persist/integration/react'
 
-import { ToastPortal } from './components/ToastPortal'
+import { AppShell } from './components/layout/AppShell'
 import TopViewContainer from './components/TopView'
 import AntdProvider from './context/AntdProvider'
 import { CodeStyleProvider } from './context/CodeStyleProvider'
-import { HeroUIProvider } from './context/HeroUIProvider'
 import { NotificationProvider } from './context/NotificationProvider'
 import StyleSheetManager from './context/StyleSheetManager'
+import { TabsProvider } from './context/TabsContext'
 import { ThemeProvider } from './context/ThemeProvider'
-import Router from './Router'
 
 const logger = loggerService.withContext('App.tsx')
 
-preferenceService.preloadAll()
+void preferenceService.preloadAll()
 
 // 创建 React Query 客户端
 const queryClient = new QueryClient({
@@ -37,24 +36,23 @@ function App(): React.ReactElement {
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
-        <HeroUIProvider>
-          <StyleSheetManager>
-            <ThemeProvider>
-              <AntdProvider>
-                <NotificationProvider>
-                  <CodeStyleProvider>
-                    <PersistGate loading={null} persistor={persistor}>
+        <StyleSheetManager>
+          <ThemeProvider>
+            <AntdProvider>
+              <NotificationProvider>
+                <CodeStyleProvider>
+                  <PersistGate loading={null} persistor={persistor}>
+                    <TabsProvider>
                       <TopViewContainer>
-                        <Router />
+                        <AppShell />
                       </TopViewContainer>
-                    </PersistGate>
-                  </CodeStyleProvider>
-                </NotificationProvider>
-              </AntdProvider>
-            </ThemeProvider>
-          </StyleSheetManager>
-          <ToastPortal />
-        </HeroUIProvider>
+                    </TabsProvider>
+                  </PersistGate>
+                </CodeStyleProvider>
+              </NotificationProvider>
+            </AntdProvider>
+          </ThemeProvider>
+        </StyleSheetManager>
       </QueryClientProvider>
     </Provider>
   )

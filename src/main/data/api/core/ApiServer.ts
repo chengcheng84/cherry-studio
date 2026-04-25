@@ -1,14 +1,22 @@
 import { loggerService } from '@logger'
-import type { ApiImplementation } from '@shared/data/api/apiSchemas'
-import type { DataRequest, DataResponse, HttpMethod, RequestContext } from '@shared/data/api/apiTypes'
-import { DataApiErrorFactory, ErrorCode } from '@shared/data/api/errorCodes'
+import type { RequestContext as ErrorRequestContext } from '@shared/data/api/apiErrors'
+import { DataApiError, DataApiErrorFactory, toDataApiError } from '@shared/data/api/apiErrors'
+import type { ApiImplementation } from '@shared/data/api/apiTypes'
+import type {
+  DataRequest,
+  DataResponse,
+  HttpMethod,
+  RequestContext,
+  SuccessStatusCode
+} from '@shared/data/api/apiTypes'
+import { isCustomStatusResult, SuccessStatus } from '@shared/data/api/apiTypes'
 
 import { MiddlewareEngine } from './MiddlewareEngine'
 
 // Handler function type
 type HandlerFunction = (params: { params?: Record<string, string>; query?: any; body?: any }) => Promise<any>
 
-const logger = loggerService.withContext('DataApiServer')
+const logger = loggerService.withContext('DataApi:Server')
 
 /**
  * Core API Server - Transport agnostic request processor
@@ -59,18 +67,26 @@ export class ApiServer {
     const { method, path } = request
     const startTime = Date.now()
 
+    // Build error request context for tracking
+    const errorContext: ErrorRequestContext = {
+      requestId: request.id,
+      path,
+      method: method,
+      timestamp: startTime
+    }
+
     logger.debug(`Processing request: ${method} ${path}`)
 
     try {
       // Find handler
-      const handlerMatch = this.findHandler(path, method as HttpMethod)
+      const handlerMatch = this.findHandler(path, method)
 
       if (!handlerMatch) {
-        throw DataApiErrorFactory.create(ErrorCode.NOT_FOUND, `Handler not found: ${method} ${path}`)
+        throw DataApiErrorFactory.notFound('Handler', `${method} ${path}`, errorContext)
       }
 
       // Create request context
-      const requestContext = this.createRequestContext(request, path, method as HttpMethod)
+      const requestContext = this.createRequestContext(request, path, method)
 
       // Execute middleware chain
       await this.middlewareEngine.executeMiddlewares(requestContext)
@@ -91,47 +107,17 @@ export class ApiServer {
     } catch (error) {
       logger.error(`Request handling failed: ${method} ${path}`, error as Error)
 
-      const apiError = DataApiErrorFactory.create(ErrorCode.INTERNAL_SERVER_ERROR, (error as Error).message)
+      // Convert to DataApiError and serialize for IPC
+      const apiError = error instanceof DataApiError ? error : toDataApiError(error, `${method} ${path}`)
 
       return {
         id: request.id,
         status: apiError.status,
-        error: apiError,
+        error: apiError.toJSON(), // Serialize for IPC transmission
         metadata: {
           duration: Date.now() - startTime,
           timestamp: Date.now()
         }
-      }
-    }
-  }
-
-  /**
-   * Handle batch requests
-   */
-  async handleBatchRequest(batchRequest: DataRequest): Promise<DataResponse> {
-    const requests = batchRequest.body?.requests || []
-
-    if (!Array.isArray(requests)) {
-      throw DataApiErrorFactory.create(ErrorCode.VALIDATION_ERROR, 'Batch request body must contain requests array')
-    }
-
-    logger.debug(`Processing batch request with ${requests.length} requests`)
-
-    // Use the batch handler from our handlers
-    const batchHandler = this.handlers['/batch']?.POST
-    if (!batchHandler) {
-      throw DataApiErrorFactory.create(ErrorCode.NOT_FOUND, 'Batch handler not found')
-    }
-
-    const result = await batchHandler({ body: batchRequest.body })
-
-    return {
-      id: batchRequest.id,
-      status: 200,
-      data: result,
-      metadata: {
-        duration: 0,
-        timestamp: Date.now()
       }
     }
   }
@@ -178,6 +164,11 @@ export class ApiServer {
     for (let i = 0; i < patternParts.length; i++) {
       if (patternParts[i].startsWith(':')) {
         const paramName = patternParts[i].slice(1)
+        // NOTE: Intentionally NOT calling decodeURIComponent() here.
+        // Path params (IDs) in this project are nanoid/UUID-style strings with no
+        // URL-encoded characters. Keeping them raw acts as implicit validation —
+        // any caller passing percent-encoded or special characters will simply
+        // fail to match, preventing unexpected ID formats from reaching services.
         params[paramName] = pathParts[i]
       } else if (patternParts[i] !== pathParts[i]) {
         return null
@@ -226,17 +217,35 @@ export class ApiServer {
       // Execute handler
       const result = await handler(handlerParams)
 
-      // Set response data
-      if (result !== undefined) {
-        response.data = result
-      }
-
-      if (!response.status) {
-        response.status = 200
+      // Check if result is custom status format { data, status }
+      if (isCustomStatusResult(result)) {
+        response.data = result.data
+        response.status = result.status
+      } else {
+        // Set response data
+        if (result !== undefined) {
+          response.data = result
+        }
+        // Infer status code based on HTTP method
+        response.status = this.inferStatusCode(context.method!, result)
       }
     } catch (error) {
       logger.error('Handler execution failed', error as Error)
       throw error
+    }
+  }
+
+  /**
+   * Infer status code based on HTTP method and result
+   */
+  private inferStatusCode(method: HttpMethod, result: unknown): SuccessStatusCode {
+    switch (method) {
+      case 'POST':
+        return SuccessStatus.CREATED // 201
+      case 'DELETE':
+        return result === undefined ? SuccessStatus.NO_CONTENT : SuccessStatus.OK // 204 or 200
+      default:
+        return SuccessStatus.OK // 200
     }
   }
 

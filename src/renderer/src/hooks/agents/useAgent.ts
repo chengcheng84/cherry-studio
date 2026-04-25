@@ -8,8 +8,12 @@ import { useAgentClient } from './useAgentClient'
 export const useAgent = (id: string | null) => {
   const { t } = useTranslation()
   const client = useAgentClient()
-  const key = id ? client.agentPaths.withId(id) : null
+  const key = client && id ? client.agentPaths.withId(id) : null
   const { apiServerConfig, apiServerRunning } = useApiServer()
+
+  // Disable SWR fetching until auth is ready
+  const swrKey = apiServerRunning && apiServerConfig.apiKey && id && key ? key : null
+
   const fetcher = useCallback(async () => {
     if (!id) {
       throw new Error(t('agent.get.error.null_id'))
@@ -17,17 +21,28 @@ export const useAgent = (id: string | null) => {
     if (!apiServerConfig.enabled) {
       throw new Error(t('apiServer.messages.notEnabled'))
     }
-    if (!apiServerRunning) {
-      throw new Error(t('agent.server.error.not_running'))
+    if (!client) {
+      throw new Error(t('apiServer.messages.notEnabled'))
     }
     const result = await client.getAgent(id)
     return result
-  }, [apiServerConfig.enabled, apiServerRunning, client, id, t])
-  const { data, error, isLoading } = useSWR(key, id ? fetcher : null)
+  }, [apiServerConfig.enabled, client, id, t])
+  const {
+    data,
+    error,
+    isLoading,
+    mutate: revalidate
+  } = useSWR(swrKey, fetcher, {
+    // Agent config may be modified externally (e.g. claw MCP tool in main process),
+    // so always revalidate on mount and reduce dedup window to get fresh data.
+    revalidateOnMount: true,
+    dedupingInterval: 2000
+  })
 
   return {
     agent: data,
     error,
-    isLoading
+    isLoading,
+    revalidate
   }
 }
