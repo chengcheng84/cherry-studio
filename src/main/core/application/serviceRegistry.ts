@@ -28,6 +28,7 @@ import { SelectionService } from '@main/services/selection/SelectionService'
 import { ShortcutService } from '@main/services/ShortcutService'
 import { SpanCacheService } from '@main/services/SpanCacheService'
 import { SubWindowService } from '@main/services/SubWindowService'
+import { TerminalService } from '@main/services/TerminalService'
 import { ThemeService } from '@main/services/ThemeService'
 import { TrayService } from '@main/services/TrayService'
 import { WebviewService } from '@main/services/WebviewService'
@@ -71,6 +72,7 @@ export const services = {
   PowerMonitorService,
   SelectionService,
   ShortcutService,
+  TerminalService,
   ThemeService,
   SpanCacheService,
   NodeTraceService,

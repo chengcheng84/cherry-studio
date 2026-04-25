@@ -20,6 +20,7 @@ const ROUTE_LABELS: Record<string, { icon: string; label: string }> = {
   '/openclaw': { icon: '🦞', label: 'OpenClaw' },
   '/launchpad': { icon: '🚀', label: 'Launchpad' },
   '/agents': { icon: '🤖', label: 'Agents' },
+  '/terminal': { icon: '🖥️', label: 'Terminal' },
 
   // Settings pages
   '/settings/provider': { icon: '🔑', label: 'Provider' },

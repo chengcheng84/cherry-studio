@@ -5774,6 +5774,9 @@
     "pin": "Fixează fila",
     "unpin": "Anulați fixarea filei"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "Aplicații",
     "code": "Cod",
@@ -5787,6 +5790,7 @@
     "paintings": "Imagini",
     "settings": "Setări",
     "store": "Bibliotecă asistenți",
+    "terminal": "[to be translated]:Terminal",
     "translate": "Traducere"
   },
   "trace": {

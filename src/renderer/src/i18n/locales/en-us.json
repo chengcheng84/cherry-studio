@@ -5774,6 +5774,9 @@
     "pin": "Pin Tab",
     "unpin": "Unpin Tab"
   },
+  "terminal": {
+    "title": "Terminal"
+  },
   "title": {
     "apps": "Apps",
     "code": "Code",

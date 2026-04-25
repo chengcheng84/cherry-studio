@@ -950,6 +950,35 @@ const api = {
   },
   analytics: {
     trackTokenUsage: (data: TokenUsageData) => ipcRenderer.invoke(IpcChannel.Analytics_TrackTokenUsage, data)
+  },
+  terminal: {
+    create: (options: {
+      id: string
+      cols: number
+      rows: number
+      shell?: string
+    }): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke(IpcChannel.Terminal_Create, options),
+    write: (id: string, data: string): Promise<void> => ipcRenderer.invoke(IpcChannel.Terminal_Write, { id, data }),
+    resize: (id: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke(IpcChannel.Terminal_Resize, { id, cols, rows }),
+    kill: (id: string): Promise<void> => ipcRenderer.invoke(IpcChannel.Terminal_Kill, { id }),
+    getShells: (): Promise<string[]> => ipcRenderer.invoke(IpcChannel.Terminal_GetShells),
+    onData: (callback: (data: { id: string; data: string }) => void) => {
+      const channel = IpcChannel.Terminal_Data
+      const listener = (_: Electron.IpcRendererEvent, data: { id: string; data: string }) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => {
+        ipcRenderer.removeListener(channel, listener)
+      }
+    },
+    onExit: (callback: (data: { id: string; exitCode: number }) => void) => {
+      const channel = IpcChannel.Terminal_Exit
+      const listener = (_: Electron.IpcRendererEvent, data: { id: string; exitCode: number }) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => {
+        ipcRenderer.removeListener(channel, listener)
+      }
+    }
   }
 }
 

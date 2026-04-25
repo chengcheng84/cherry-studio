@@ -18,6 +18,7 @@ const ALLOWED_ROUTES = [
   '/code',
   '/store',
   '/launchpad',
+  '/terminal',
   '/'
 ]
 

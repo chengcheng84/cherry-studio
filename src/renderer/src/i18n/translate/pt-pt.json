@@ -5774,6 +5774,9 @@
     "pin": "Fixar Aba",
     "unpin": "Desafixar Aba"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "Miniaplicativos",
     "code": "Código",

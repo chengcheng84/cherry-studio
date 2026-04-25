@@ -14,7 +14,8 @@ import {
   MousePointerClick,
   NotepadText,
   Palette,
-  Sparkle
+  Sparkle,
+  Terminal
 } from 'lucide-react'
 import type { FC, ReactNode } from 'react'
 import { useCallback, useMemo } from 'react'
@@ -117,7 +118,8 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         files: <Folder size={16} />,
         notes: <NotepadText size={16} />,
         code_tools: <Code size={16} />,
-        openclaw: <OpenClawSidebarIcon size={16} />
+        openclaw: <OpenClawSidebarIcon size={16} />,
+        terminal: <Terminal size={16} />
       }) satisfies Record<SidebarIcon, ReactNode>,
     []
   )

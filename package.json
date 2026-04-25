@@ -97,6 +97,8 @@
     "@vectorstores/core": "^0.1.8",
     "@vectorstores/libsql": "workspace:*",
     "@vectorstores/readers": "^0.1.8",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
     "cron-parser": "^5.0.8",
     "express": "5.1.0",
     "font-list": "2.0.0",
@@ -104,6 +106,7 @@
     "grammy": "^1.36.3",
     "gray-matter": "4.0.3",
     "jsdom": "26.1.0",
+    "node-pty": "^1.1.0",
     "node-stream-zip": "1.15.0",
     "officeparser": "4.2.0",
     "os-proxy-config": "1.1.2",
@@ -523,12 +526,17 @@
       "electron-winstaller",
       "esbuild",
       "msw",
+      "node-pty",
       "protobufjs",
       "registry-js",
       "selection-hook",
       "sharp",
       "tesseract.js",
       "zipfile"
+    ],
+    "ignoredBuiltDependencies": [
+      "canvas",
+      "core-js"
     ]
   },
   "packageManager": "pnpm@10.27.0",

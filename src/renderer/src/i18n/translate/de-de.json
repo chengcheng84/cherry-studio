@@ -5774,6 +5774,9 @@
     "pin": "Tab anheften",
     "unpin": "Tab lösen"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "Mini-Apps",
     "code": "Code",

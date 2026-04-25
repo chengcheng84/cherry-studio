@@ -19,7 +19,8 @@ import {
   MousePointerClick,
   NotepadText,
   Palette,
-  Sparkle
+  Sparkle,
+  Terminal as TerminalIcon
 } from 'lucide-react'
 import type { Ref } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -46,7 +47,8 @@ const routePrefixMap: Record<SidebarIconType, string> = {
   files: '/app/files',
   code_tools: '/app/code',
   notes: '/app/notes',
-  openclaw: '/app/openclaw'
+  openclaw: '/app/openclaw',
+  terminal: '/app/terminal'
 }
 
 const iconMap: Record<SidebarIconType, SidebarMenuItem['icon']> = {
@@ -60,7 +62,8 @@ const iconMap: Record<SidebarIconType, SidebarMenuItem['icon']> = {
   files: Folder,
   code_tools: Code,
   notes: NotepadText,
-  openclaw: OpenClawSidebarIcon
+  openclaw: OpenClawSidebarIcon,
+  terminal: TerminalIcon
 }
 
 function getMenuPath(icon: SidebarIconType, defaultPaintingProvider: string): string {

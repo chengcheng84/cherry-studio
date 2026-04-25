@@ -5774,6 +5774,9 @@
     "pin": "タブをピン留め",
     "unpin": "タブを固定解除"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "アプリ",
     "code": "Code",

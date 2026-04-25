@@ -61,7 +61,7 @@ const LaunchpadPage: FC = () => {
     {
       icon: <Terminal size={32} className="icon" />,
       text: t('title.terminal'),
-      path: '/terminal',
+      path: '/app/terminal',
       bgColor: 'linear-gradient(135deg, #000000, #1F2937)' // Terminal：纯黑渐变，代表命令行界面
     },
     {

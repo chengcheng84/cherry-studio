@@ -5774,6 +5774,9 @@
     "pin": "Épingler l'onglet",
     "unpin": "Détacher l'onglet"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "Mini-programmes",
     "code": "Code",

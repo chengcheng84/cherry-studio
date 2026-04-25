@@ -5774,6 +5774,9 @@
     "pin": "Anclar pestaña",
     "unpin": "Desanclar pestaña"
   },
+  "terminal": {
+    "title": "[to be translated]:Terminal"
+  },
   "title": {
     "apps": "Aplicaciones",
     "code": "Código",

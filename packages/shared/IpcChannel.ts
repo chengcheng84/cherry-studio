@@ -456,6 +456,15 @@ export enum IpcChannel {
   OpenClaw_CheckUpdate = 'openclaw:check-update',
   OpenClaw_PerformUpdate = 'openclaw:perform-update',
 
+  // Terminal
+  Terminal_Create = 'terminal:create',
+  Terminal_Write = 'terminal:write',
+  Terminal_Resize = 'terminal:resize',
+  Terminal_Kill = 'terminal:kill',
+  Terminal_GetShells = 'terminal:get-shells',
+  Terminal_Data = 'terminal:data',
+  Terminal_Exit = 'terminal:exit',
+
   // Analytics
   Analytics_TrackTokenUsage = 'analytics:track-token-usage',
 
